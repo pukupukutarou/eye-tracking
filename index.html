@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>iPad 視線追跡 ライブビューワー</title>
+  <title>iPad リアルタイム 3D Face Mesh</title>
   <style>
     body {
       margin: 0;
@@ -14,20 +14,24 @@
       overflow: hidden;
       width: 100vw;
       height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
 
-    /* カメラ映像（小窓表示） */
-    #video-container {
-      position: absolute;
-      top: 15px;
-      right: 15px;
-      width: 200px;
-      height: 150px;
+    /* メインの描画領域 */
+    #stage {
+      position: relative;
+      width: 800px;
+      height: 600px;
+      max-width: 95vw;
+      max-height: 75vh;
       border: 2px solid #30363d;
-      border-radius: 8px;
+      border-radius: 12px;
       overflow: hidden;
       background: #000;
-      z-index: 10;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     }
 
     video, canvas {
@@ -36,34 +40,15 @@
       left: 0;
       width: 100%;
       height: 100%;
-      transform: scaleX(-1);
+      transform: scaleX(-1); /* 鏡合わせ表示 */
     }
 
-    /* 画面上の視線ポインタ（青い丸） */
-    #gaze-pointer {
-      position: absolute;
-      width: 36px;
-      height: 36px;
-      background-color: rgba(0, 170, 255, 0.85);
-      border: 3px solid #fff;
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-      box-shadow: 0 0 25px #00aaff;
-      pointer-events: none;
-      z-index: 100;
-      display: none;
-      transition: left 0.1s ease-out, top 0.1s ease-out;
-    }
-
-    /* 中央コントロールパネル */
+    /* 操作パネル */
     #control-panel {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
+      margin-top: 15px;
       background: rgba(22, 27, 34, 0.9);
       padding: 12px 24px;
-      border-radius: 12px;
+      border-radius: 10px;
       border: 1px solid #30363d;
       text-align: center;
       z-index: 20;
@@ -78,20 +63,22 @@
     }
     input { background: #161b22; color: #fff; width: 120px; text-align: center; }
     button { background: #238636; color: white; cursor: pointer; border: none; font-weight: bold; }
+    button:hover { background: #2ea043; }
     .status { margin-bottom: 6px; font-weight: bold; color: #58a6ff; font-size: 14px; }
   </style>
 
+  <!-- MediaPipe Face Mesh ＆ 描画ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  <!-- PeerJS (WebRTC通信) -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
 
-  <!-- 画面上のどこを見ているかを示すポインタ -->
-  <div id="gaze-pointer"></div>
+  <h2>🎭 リアルタイム 3D Face Mesh ビューワー</h2>
 
-  <!-- 右上の小窓カメラ -->
-  <div id="video-container">
+  <div id="stage">
     <video id="webcam" autoplay playsinline></video>
     <canvas id="output-canvas"></canvas>
   </div>
@@ -102,7 +89,6 @@
       ID: <span id="my-id" style="color: #f2e05a; font-weight: bold;">----</span>
       <input type="text" id="target-id" placeholder="相手のID">
       <button onclick="connectToPeer()">iPadから接続</button>
-      <button onclick="resetCenter()" style="background: #d29922; margin-left: 10px;">正面リセット</button>
     </div>
   </div>
 
@@ -110,39 +96,28 @@
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const gazePointer = document.getElementById('gaze-pointer');
     const statusText = document.getElementById('status');
     const myIdSpan = document.getElementById('my-id');
 
     let peer = null;
     let dataConnection = null;
-    
-    // 基準となる正面視線位置（自動調整用）
-    let baseIrisOffsetX = 0;
-    let baseIrisOffsetY = 0;
-    // 目の動きを画面上に広げる感度倍率
-    const SENSITIVITY_X = 15.0; 
-    const SENSITIVITY_Y = 12.0;
 
-    // --- PeerJS（通信） ---
+    // --- PeerJS 通信基盤 ---
     const customId = Math.floor(1000 + Math.random() * 9000).toString();
     peer = new Peer(customId);
 
     peer.on('open', (id) => {
       myIdSpan.innerText = id;
-      statusText.innerText = "Windows側は表示されたIDをiPadに入力してください";
-    });
-
-    peer.on('connection', (conn) => {
-      dataConnection = conn;
-      setupDataReceiver();
+      statusText.innerText = "Windows側はこのIDをiPadに入力して待機してください";
     });
 
     peer.on('call', (call) => {
       call.answer();
       call.on('stream', (remoteStream) => {
+        // Windows側：キャンバスを描画モードにしてリモート映像を表示
         videoElement.srcObject = remoteStream;
-        statusText.innerText = "iPadの視線を追跡中！画面の中央を見て「正面リセット」を押してください";
+        statusText.innerText = "iPadからのリアルタイムFace Meshを受信中！";
+        startMeshProcessing(false); // 受信側もローカルで描画処理を走らせる
       });
     });
 
@@ -153,117 +128,89 @@
       statusText.innerText = "接続中...";
       dataConnection = peer.connect(targetId);
       dataConnection.on('open', () => {
-        statusText.innerText = "接続成功！カメラを開始します";
-        startCameraAndTracking(targetId);
+        statusText.innerText = "接続成功！カメラとFace Meshを開始します";
+        startCameraAndMesh(targetId);
       });
     }
 
-    // Windows（受信側）：視線座標を受け取り、大きな青丸を移動させる
-    function setupDataReceiver() {
-      dataConnection.on('data', (data) => {
-        if (data.type === 'gaze') {
-          gazePointer.style.display = 'block';
-
-          // 基準位置からの相対的なオフセット量を計算
-          const deltaX = (data.irisX - baseIrisOffsetX) * SENSITIVITY_X;
-          const deltaY = (data.irisY - baseIrisOffsetY) * SENSITIVITY_Y;
-
-          // 画面中央 (50%) からどれだけ離れたかを算出
-          let screenX = (0.5 + deltaX) * window.innerWidth;
-          let screenY = (0.5 + deltaY) * window.innerHeight;
-
-          // 画面外はみ出し防止
-          screenX = Math.max(20, Math.min(window.innerWidth - 20, screenX));
-          screenY = Math.max(20, Math.min(window.innerHeight - 20, screenY));
-
-          gazePointer.style.left = screenX + 'px';
-          gazePointer.style.top = screenY + 'px';
-        }
-      });
-    }
-
-    function resetCenter() {
-      // 現在の目の位置を「正面（画面中央）」として記憶
-      baseIrisOffsetX = window.lastRawIrisX || 0;
-      baseIrisOffsetY = window.lastRawIrisY || 0;
-      statusText.innerText = "正面位置をリセットしました！";
-    }
-
-    // --- iPad（送信側）：目の動きベクトルを送信 ---
-    function startCameraAndTracking(targetId) {
+    // --- 3D Face Mesh 処理 ＆ 描画エンジン ---
+    function startMeshProcessing(isCameraOwner, targetId = null) {
       const faceMesh = new FaceMesh({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
       });
 
       faceMesh.setOptions({
         maxNumFaces: 1,
-        refineLandmarks: true, // 虹彩（黒目）の検出を有効化
+        refineLandmarks: true, // 輪郭・パーツ精度の向上
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
 
       faceMesh.onResults((results) => {
-        canvasElement.width = videoElement.videoWidth;
-        canvasElement.height = videoElement.videoHeight;
+        canvasElement.width = videoElement.videoWidth || 800;
+        canvasElement.height = videoElement.videoHeight || 600;
+
+        canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          const landmarks = results.multiFaceLandmarks[0];
-          
-          // 顔の中心（鼻筋 168）と左右の黒目（468, 473）の相対座標を計算
-          const nose = landmarks[168];
-          const leftIris = landmarks[468];
-          const rightIris = landmarks[473];
-
-          const irisCenterX = (leftIris.x + rightIris.x) / 2;
-          const irisCenterY = (leftIris.y + rightIris.y) / 2;
-
-          // 顔の中心から見て黒目がどれくらい動いているか（向き）
-          // 鏡合わせのためXの差分符号を反転
-          const irisOffsetX = -(irisCenterX - nose.x);
-          const irisOffsetY = irisCenterY - nose.y;
-
-          window.lastRawIrisX = irisOffsetX;
-          window.lastRawIrisY = irisOffsetY;
-
-          // プレビュー用に目元に小さな赤点を描画
-          drawPoint(leftIris);
-          drawPoint(rightIris);
-
-          // 相手（Windows）に目の「向きベクトル」を送信
-          if (dataConnection && dataConnection.open) {
-            dataConnection.send({
-              type: 'gaze',
-              irisX: irisOffsetX,
-              irisY: irisOffsetY
+          for (const landmarks of results.multiFaceLandmarks) {
+            // 1. 顔全体を覆うメッシュ（網目）の描画
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {
+              color: '#C0C0C070',
+              lineWidth: 1
             });
+
+            // 2. 目の輪郭・黒目の強調ライン
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: '#FF3030' });
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYEBROW, { color: '#FF3030' });
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYEBROW, { color: '#30FF30' });
+
+            // 3. 顔の輪郭ライン
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, { color: '#E0E0E0' });
+
+            // 4. 唇のライン
+            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, { color: '#E0E0FF' });
           }
+          statusText.innerText = "顔メッシュトラッキング中！";
+        } else {
+          statusText.innerText = "顔をカメラに向けてください";
         }
+        canvasCtx.restore();
       });
 
-      function drawPoint(point) {
-        const x = point.x * canvasElement.width;
-        const y = point.y * canvasElement.height;
-        canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 3, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = '#ff0055';
-        canvasCtx.fill();
+      if (isCameraOwner) {
+        const camera = new Camera(videoElement, {
+          onFrame: async () => {
+            await faceMesh.send({ image: videoElement });
+          },
+          width: 640,
+          height: 480,
+          facingMode: 'user'
+        });
+
+        camera.start().then(() => {
+          const stream = videoElement.srcObject;
+          peer.call(targetId, stream);
+          statusText.innerText = "iPadからリアルタイムFace Mesh映像を配信中！";
+        });
+      } else {
+        // Windows側（受信映像に対して毎フレームFace Meshを適用）
+        async function processFrame() {
+          if (videoElement.currentTime > 0 && !videoElement.paused && !videoElement.ended) {
+            await faceMesh.send({ image: videoElement });
+          }
+          requestAnimationFrame(processFrame);
+        }
+        videoElement.addEventListener('play', () => {
+          processFrame();
+        });
       }
+    }
 
-      const camera = new Camera(videoElement, {
-        onFrame: async () => {
-          await faceMesh.send({ image: videoElement });
-        },
-        width: 640,
-        height: 480,
-        facingMode: 'user'
-      });
-
-      camera.start().then(() => {
-        const stream = videoElement.srcObject;
-        peer.call(targetId, stream);
-        statusText.innerText = "配信中！正面を見ながらWindowsの「正面リセット」を押してください。";
-      });
+    function startCameraAndMesh(targetId) {
+      startMeshProcessing(true, targetId);
     }
   </script>
 </body>
