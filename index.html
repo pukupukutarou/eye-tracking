@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>iPad リアルタイム 3D Face Mesh</title>
+  <title>iPad ジェスチャーズーム ＆ リアルタイム配信</title>
   <style>
     body {
       margin: 0;
@@ -20,17 +20,28 @@
       justify-content: center;
     }
 
+    /* カメラ・描画用ステージ */
     #stage {
       position: relative;
       width: 800px;
       height: 600px;
       max-width: 95vw;
-      max-height: 75vh;
+      max-height: 70vh;
       border: 2px solid #30363d;
       border-radius: 12px;
       overflow: hidden;
       background: #000;
       box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+
+    #zoom-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform-origin: center center;
+      transition: transform 0.05s ease-out;
     }
 
     video, canvas {
@@ -39,9 +50,10 @@
       left: 0;
       width: 100%;
       height: 100%;
-      transform: scaleX(-1); /* 鏡合わせ */
+      transform: scaleX(-1); /* 鏡合わせ表示 */
     }
 
+    /* UIパネル */
     #control-panel {
       margin-top: 15px;
       background: rgba(22, 27, 34, 0.9);
@@ -63,25 +75,29 @@
     button { background: #238636; color: white; cursor: pointer; border: none; font-weight: bold; }
     button:hover { background: #2ea043; }
     .status { margin-bottom: 6px; font-weight: bold; color: #58a6ff; font-size: 14px; }
+    .zoom-info { font-size: 16px; color: #f2e05a; font-weight: bold; margin-top: 4px; }
   </style>
 
-  <!-- MediaPipe Face Mesh & PeerJS -->
+  <!-- MediaPipe Hands ＆ PeerJS -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
 
-  <h2>🎭 リアルタイム 3D Face Mesh ビューワー</h2>
+  <h2>👌 手のジェスチャーズーム ビューワー</h2>
 
   <div id="stage">
-    <video id="webcam" autoplay playsinline></video>
-    <canvas id="output-canvas"></canvas>
+    <div id="zoom-wrapper">
+      <video id="webcam" autoplay playsinline></video>
+      <canvas id="output-canvas"></canvas>
+    </div>
   </div>
 
   <div id="control-panel">
     <div id="status" class="status">通信初期化中...</div>
-    <div id="connection-ui">
+    <div class="zoom-info">現在の倍率: <span id="zoom-val">1.00</span>x</div>
+    <div id="connection-ui" style="margin-top: 8px;">
       ID: <span id="my-id" style="color: #f2e05a; font-weight: bold;">----</span>
       <input type="text" id="target-id" placeholder="相手のID">
       <button onclick="connectToPeer()">iPadから接続</button>
@@ -92,13 +108,16 @@
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
     const canvasCtx = canvasElement.getContext('2d');
+    const zoomWrapper = document.getElementById('zoom-wrapper');
+    const zoomValSpan = document.getElementById('zoom-val');
     const statusText = document.getElementById('status');
     const myIdSpan = document.getElementById('my-id');
 
     let peer = null;
     let dataConnection = null;
+    let currentScale = 1.0;
 
-    // --- PeerJS (通信基盤) ---
+    // --- PeerJS (WebRTC通信) ---
     const customId = Math.floor(1000 + Math.random() * 9000).toString();
     peer = new Peer(customId);
 
@@ -107,12 +126,16 @@
       statusText.innerText = "Windows側はこのIDをiPadに入力して待機してください";
     });
 
+    peer.on('connection', (conn) => {
+      dataConnection = conn;
+      setupDataReceiver();
+    });
+
     peer.on('call', (call) => {
       call.answer();
       call.on('stream', (remoteStream) => {
         videoElement.srcObject = remoteStream;
-        statusText.innerText = "iPadからのリアルタイム映像を受信中！";
-        initFaceMesh(false);
+        statusText.innerText = "iPadからの映像を受信中！手でピンチ操作できます";
       });
     });
 
@@ -123,43 +146,89 @@
       statusText.innerText = "接続中...";
       dataConnection = peer.connect(targetId);
       dataConnection.on('open', () => {
-        statusText.innerText = "接続成功！カメラとFace Meshを開始します";
-        initFaceMesh(true, targetId);
+        statusText.innerText = "接続成功！手認識トラッキングを開始します";
+        initHandTracking(true, targetId);
       });
     }
 
-    // --- Face Mesh ＆ メッシュ自前描画 ---
-    function initFaceMesh(isCameraOwner, targetId = null) {
-      const faceMesh = new FaceMesh({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    // Windows側（データ受信）：iPadから送られたズーム倍率を画面に反映
+    function setupDataReceiver() {
+      dataConnection.on('data', (data) => {
+        if (data.type === 'zoom') {
+          updateZoom(data.scale);
+        }
+      });
+    }
+
+    function updateZoom(scale) {
+      currentScale = Math.max(0.5, Math.min(3.0, scale)); // 0.5倍〜3.0倍に制限
+      zoomWrapper.style.transform = `scale(${currentScale})`;
+      zoomValSpan.innerText = currentScale.toFixed(2);
+    }
+
+    // --- MediaPipe Hands (手の認識 ＆ ジェスチャーズーム) ---
+    function initHandTracking(isCameraOwner, targetId = null) {
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
-      faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
 
-      faceMesh.onResults((results) => {
+      hands.onResults((results) => {
         canvasElement.width = videoElement.videoWidth || 800;
         canvasElement.height = videoElement.videoHeight || 600;
 
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          const landmarks = results.multiFaceLandmarks[0];
-          
-          // 1. メッシュ（顔全体を繋ぐ三角形・ライン）を描画
-          drawCustomMesh(landmarks);
-          
-          // 2. ランドマークの全頂点に小さなドットを描画
-          drawLandmarkDots(landmarks);
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const landmarks = results.multiHandLandmarks[0];
 
-          statusText.innerText = `メッシュ描画中！ (${landmarks.length} 頂点検出)`;
+          // 親指の先 (4) と 人差し指の先 (8) の座標を取得
+          const thumbTip = landmarks[4];
+          const indexTip = landmarks[8];
+
+          const w = canvasElement.width;
+          const h = canvasElement.height;
+
+          const p1 = { x: thumbTip.x * w, y: thumbTip.y * h };
+          const p2 = { x: indexTip.x * w, y: indexTip.y * h };
+
+          // 2点間のピクセル距離を計算
+          const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+          // 指間の距離（標準約50〜250px）をズーム倍率 (0.5x〜2.5x) にマッピング
+          const newScale = 0.5 + (distance / 120);
+          updateZoom(newScale);
+
+          // Windows側へズーム情報を送信
+          if (dataConnection && dataConnection.open) {
+            dataConnection.send({
+              type: 'zoom',
+              scale: newScale
+            });
+          }
+
+          // 1. 指先を結ぶ直線を描画
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(p1.x, p1.y);
+          canvasCtx.lineTo(p2.x, p2.y);
+          canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+          canvasCtx.lineWidth = 3;
+          canvasCtx.stroke();
+
+          // 2. 指先にインジケーター（丸）を描画
+          drawCircle(p1.x, p1.y, 8, '#ff0055'); // 親指: 赤
+          drawCircle(p2.x, p2.y, 8, '#00aaff'); // 人差し指: 青
+
+          statusText.innerText = "手検出中！指を開閉してズームイン・ズームアウト";
         } else {
-          statusText.innerText = "顔をカメラに向けてください";
+          statusText.innerText = "カメラに手をかざしてください";
         }
         canvasCtx.restore();
       });
@@ -167,7 +236,7 @@
       if (isCameraOwner) {
         const camera = new Camera(videoElement, {
           onFrame: async () => {
-            await faceMesh.send({ image: videoElement });
+            await faceMeshOrHandsFrame(hands);
           },
           width: 640,
           height: 480,
@@ -177,68 +246,25 @@
         camera.start().then(() => {
           const stream = videoElement.srcObject;
           peer.call(targetId, stream);
-          statusText.innerText = "iPadからFace Mesh付き映像を配信中！";
-        });
-      } else {
-        async function renderFrame() {
-          if (videoElement.currentTime > 0 && !videoElement.paused && !videoElement.ended) {
-            await faceMesh.send({ image: videoElement });
-          }
-          requestAnimationFrame(renderFrame);
-        }
-        videoElement.addEventListener('play', () => {
-          renderFrame();
+          statusText.innerText = "配信中！カメラに手を向けて操作してください。";
         });
       }
     }
 
-    // 顔のランドマーク同士を結んで自前で3D網目（メッシュ）を描く処理
-    function drawCustomMesh(landmarks) {
-      const w = canvasElement.width;
-      const h = canvasElement.height;
+    async function faceMeshOrHandsFrame(hands) {
+      if (videoElement.readyState >= 2) {
+        await hands.send({ image: videoElement });
+      }
+    }
 
-      // 描画スタイルの設定（サイバーグリーン）
-      canvasCtx.strokeStyle = 'rgba(0, 255, 170, 0.45)';
-      canvasCtx.lineWidth = 0.8;
-
-      // 定義されているFACEMESH接続リストが取得できればそれを使い、
-      // なければ近接点同士を結んで確実にメッシュ化する
-      const connections = window.FACEMESH_TESSELATION || getFallbackConnections();
-
+    function drawCircle(x, y, r, color) {
       canvasCtx.beginPath();
-      for (const conn of connections) {
-        const p1 = landmarks[conn[0]];
-        const p2 = landmarks[conn[1]];
-        if (p1 && p2) {
-          canvasCtx.moveTo(p1.x * w, p1.y * h);
-          canvasCtx.lineTo(p2.x * w, p2.y * h);
-        }
-      }
+      canvasCtx.arc(x, y, r, 0, 2 * Math.PI);
+      canvasCtx.fillStyle = color;
+      canvasCtx.fill();
+      canvasCtx.strokeStyle = '#ffffff';
+      canvasCtx.lineWidth = 2;
       canvasCtx.stroke();
-    }
-
-    // ランドマークのポイントにネオン点滅ドットを描く
-    function drawLandmarkDots(landmarks) {
-      const w = canvasElement.width;
-      const h = canvasElement.height;
-
-      canvasCtx.fillStyle = '#00ffaa';
-      for (let i = 0; i < landmarks.length; i += 3) { // 軽快に動くよう間引き描画
-        const p = landmarks[i];
-        canvasCtx.beginPath();
-        canvasCtx.arc(p.x * w, p.y * h, 1.2, 0, 2 * Math.PI);
-        canvasCtx.fill();
-      }
-    }
-
-    // 万が一ライブラリ内部の接続定義が読めない場合のバックアップメッシュ構造
-    function getFallbackConnections() {
-      const links = [];
-      for (let i = 0; i < 468; i += 2) {
-        links.push([i, (i + 1) % 468]);
-        links.push([i, (i + 4) % 468]);
-      }
-      return links;
     }
   </script>
 </body>
