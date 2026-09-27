@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>iPad ハンドメッシュ ＆ リアルタイム配信</title>
+  <title>iPad 人差し指でお絵描き ＆ リアルタイム配信</title>
   <style>
     body {
       margin: 0;
@@ -20,13 +20,13 @@
       justify-content: center;
     }
 
-    /* カメラ・描画用ステージ */
+    /* ステージ */
     #stage {
       position: relative;
       width: 800px;
       height: 600px;
       max-width: 95vw;
-      max-height: 70vh;
+      max-height: 65vh;
       border: 2px solid #30363d;
       border-radius: 12px;
       overflow: hidden;
@@ -34,7 +34,8 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     }
 
-    video, canvas {
+    /* カメラ映像・お絵描きキャンバス・カーソルキャンバス */
+    video, .layer-canvas {
       position: absolute;
       top: 0;
       left: 0;
@@ -43,11 +44,50 @@
       transform: scaleX(-1); /* 鏡合わせ表示 */
     }
 
-    /* UIパネル */
+    /* カラーパレット & UI */
+    #palette {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      background: rgba(22, 27, 34, 0.85);
+      padding: 8px 16px;
+      border-radius: 30px;
+      border: 1px solid #30363d;
+      z-index: 30;
+    }
+
+    .color-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    .color-btn:active, .color-btn.active {
+      transform: scale(1.25);
+      border-color: #58a6ff;
+    }
+
+    .clear-btn {
+      background: #da3633;
+      color: white;
+      border: none;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    /* コントロールパネル */
     #control-panel {
-      margin-top: 15px;
+      margin-top: 12px;
       background: rgba(22, 27, 34, 0.9);
-      padding: 12px 24px;
+      padding: 10px 20px;
       border-radius: 10px;
       border: 1px solid #30363d;
       text-align: center;
@@ -55,16 +95,15 @@
     }
 
     input, button {
-      padding: 8px 12px;
-      font-size: 15px;
+      padding: 6px 12px;
+      font-size: 14px;
       margin: 4px;
       border-radius: 6px;
       border: 1px solid #30363d;
     }
     input { background: #161b22; color: #fff; width: 120px; text-align: center; }
-    button { background: #238636; color: white; cursor: pointer; border: none; font-weight: bold; }
-    button:hover { background: #2ea043; }
-    .status { margin-bottom: 6px; font-weight: bold; color: #58a6ff; font-size: 14px; }
+    .btn-connect { background: #238636; color: white; cursor: pointer; border: none; font-weight: bold; }
+    .status { margin-bottom: 4px; font-weight: bold; color: #58a6ff; font-size: 14px; }
   </style>
 
   <!-- MediaPipe Hands ＆ PeerJS -->
@@ -74,47 +113,49 @@
 </head>
 <body>
 
-  <h2>🖐️ リアルタイム・ハンドメッシュ ビューワー</h2>
+  <h2>✏️ 人差し指エアペイント</h2>
 
   <div id="stage">
     <video id="webcam" autoplay playsinline></video>
-    <canvas id="output-canvas"></canvas>
+    <!-- お絵描き内容を保持するキャンバス -->
+    <canvas id="paint-canvas" class="layer-canvas"></canvas>
+    <!-- 人差し指のカーソルやUIを描画するキャンバス -->
+    <canvas id="ui-canvas" class="layer-canvas"></canvas>
+
+    <!-- カラーパレット -->
+    <div id="palette">
+      <div class="color-btn active" style="background: #ff0055;" onclick="selectColor('#ff0055', this)"></div>
+      <div class="color-btn" style="background: #00ff66;" onclick="selectColor('#00ff66', this)"></div>
+      <div class="color-btn" style="background: #00aaff;" onclick="selectColor('#00aaff', this)"></div>
+      <div class="color-btn" style="background: #ffcc00;" onclick="selectColor('#ffcc00', this)"></div>
+      <div class="color-btn" style="background: #ffffff;" onclick="selectColor('#ffffff', this)"></div>
+      <button class="clear-btn" onclick="clearCanvas(true)">全消去</button>
+    </div>
   </div>
 
   <div id="control-panel">
     <div id="status" class="status">通信初期化中...</div>
-    <div id="connection-ui" style="margin-top: 8px;">
+    <div id="connection-ui">
       ID: <span id="my-id" style="color: #f2e05a; font-weight: bold;">----</span>
       <input type="text" id="target-id" placeholder="相手のID">
-      <button onclick="connectToPeer()">iPadから接続</button>
+      <button class="btn-connect" onclick="connectToPeer()">iPadから接続</button>
     </div>
   </div>
 
   <script>
     const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('output-canvas');
-    const canvasCtx = canvasElement.getContext('2d');
+    const paintCanvas = document.getElementById('paint-canvas');
+    const paintCtx = paintCanvas.getContext('2d');
+    const uiCanvas = document.getElementById('ui-canvas');
+    const uiCtx = uiCanvas.getContext('2d');
     const statusText = document.getElementById('status');
     const myIdSpan = document.getElementById('my-id');
 
     let peer = null;
     let dataConnection = null;
 
-    // 手の関節（21箇所のポイント）の接続定義 (ワイヤーフレームメッシュ)
-    const HAND_CONNECTIONS = [
-      // 親指
-      [0, 1], [1, 2], [2, 3], [3, 4],
-      // 人差し指
-      [0, 5], [5, 6], [6, 7], [7, 8],
-      // 中指
-      [9, 10], [10, 11], [11, 12],
-      // 薬指
-      [13, 14], [14, 15], [15, 16],
-      // 小指
-      [0, 17], [17, 18], [18, 19], [19, 20],
-      // 手のひら・指根の横接続メッシュ
-      [5, 9], [9, 13], [13, 17], [0, 5]
-    ];
+    let currentColor = '#ff0055';
+    let prevPoint = null; // 前回の指先座標
 
     // --- PeerJS (WebRTC通信) ---
     const customId = Math.floor(1000 + Math.random() * 9000).toString();
@@ -134,7 +175,7 @@
       call.answer();
       call.on('stream', (remoteStream) => {
         videoElement.srcObject = remoteStream;
-        statusText.innerText = "iPadからの映像受信中！ハンドメッシュ描画中";
+        statusText.innerText = "iPadからの映像を受信中！お絵描きデータを同期します";
       });
     });
 
@@ -145,64 +186,132 @@
       statusText.innerText = "接続中...";
       dataConnection = peer.connect(targetId);
       dataConnection.on('open', () => {
-        statusText.innerText = "接続成功！手トラッキングを開始します";
+        statusText.innerText = "接続成功！指先トラッキングを開始します";
         initHandTracking(true, targetId);
       });
     }
 
-    // Windows側（データ受信）：iPadから送られたハンドランドマーク（座標データ）でメッシュを描画
+    // Windows側（データ受信）：iPadから送られた描画データを受け取って描画
     function setupDataReceiver() {
       dataConnection.on('data', (data) => {
-        if (data.type === 'hand_mesh') {
-          drawHandMesh(data.landmarks);
+        if (data.type === 'draw_line') {
+          drawLineOnCanvas(data.p1, data.p2, data.color);
+        } else if (data.type === 'clear') {
+          clearCanvas(false);
+        } else if (data.type === 'cursor') {
+          drawCursorOnUI(data.point, data.color);
         }
       });
     }
 
-    // --- MediaPipe Hands (手のメッシュ認識) ---
+    // --- 色選択 ＆ キャンバスクリア ---
+    function selectColor(color, element) {
+      currentColor = color;
+      document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+      if (element) element.classList.add('active');
+    }
+
+    function clearCanvas(broadcast = true) {
+      paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+      if (broadcast && dataConnection && dataConnection.open) {
+        dataConnection.send({ type: 'clear' });
+      }
+    }
+
+    // --- 描画関数 ---
+    function drawLineOnCanvas(p1, p2, color) {
+      paintCtx.beginPath();
+      paintCtx.moveTo(p1.x, p1.y);
+      paintCtx.lineTo(p2.x, p2.y);
+      paintCtx.strokeStyle = color;
+      paintCtx.lineWidth = 6;
+      paintCtx.lineCap = 'round';
+      paintCtx.lineJoin = 'round';
+      paintCtx.stroke();
+    }
+
+    function drawCursorOnUI(point, color) {
+      uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
+      if (!point) return;
+
+      uiCtx.beginPath();
+      uiCtx.arc(point.x, point.y, 8, 0, 2 * Math.PI);
+      uiCtx.fillStyle = color;
+      uiCtx.fill();
+      uiCtx.strokeStyle = '#ffffff';
+      uiCtx.lineWidth = 2;
+      uiCtx.stroke();
+    }
+
+    // --- MediaPipe Hands (人差し指でお絵描き) ---
     function initHandTracking(isCameraOwner, targetId = null) {
       const hands = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
       hands.setOptions({
-        maxNumHands: 2, // 最大2つの手をトラッキング
+        maxNumHands: 1,
         modelComplexity: 1,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
 
       hands.onResults((results) => {
-        canvasElement.width = videoElement.videoWidth || 800;
-        canvasElement.height = videoElement.videoHeight || 600;
+        const w = videoElement.videoWidth || 800;
+        const h = videoElement.videoHeight || 600;
 
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        if (paintCanvas.width !== w || paintCanvas.height !== h) {
+          paintCanvas.width = w;
+          paintCanvas.height = h;
+          uiCanvas.width = w;
+          uiCanvas.height = h;
+        }
 
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-          const allLandmarks = [];
+          const landmarks = results.multiHandLandmarks[0];
 
-          for (const landmarks of results.multiHandLandmarks) {
-            // メッシュ描画
-            renderMeshOnCanvas(landmarks);
+          // 人差し指の先端 (8番目のランドマーク)
+          const indexTip = landmarks[8];
+          const currentPoint = {
+            x: indexTip.x * w,
+            y: indexTip.y * h
+          };
 
-            // Windows送信用に正規化座標(0~1)を記録
-            allLandmarks.push(landmarks);
+          // 前回の点があれば線を引く
+          if (prevPoint) {
+            drawLineOnCanvas(prevPoint, currentPoint, currentColor);
+
+            // データ通信でWindows側へ描画情報をリアルタイム送信
+            if (dataConnection && dataConnection.open) {
+              dataConnection.send({
+                type: 'draw_line',
+                p1: prevPoint,
+                p2: currentPoint,
+                color: currentColor
+              });
+            }
           }
 
-          // データ通信でWindows側へ関節座標を送信
+          // 指先カーソルを描画
+          drawCursorOnUI(currentPoint, currentColor);
           if (dataConnection && dataConnection.open) {
             dataConnection.send({
-              type: 'hand_mesh',
-              landmarks: allLandmarks
+              type: 'cursor',
+              point: currentPoint,
+              color: currentColor
             });
           }
 
-          statusText.innerText = `手を検出中 (${results.multiHandLandmarks.length}つの手)`;
+          prevPoint = currentPoint;
+          statusText.innerText = "人差し指を動かしてお絵描き中！";
         } else {
-          statusText.innerText = "カメラに手をかざしてください";
+          prevPoint = null;
+          drawCursorOnUI(null, null);
+          if (dataConnection && dataConnection.open) {
+            dataConnection.send({ type: 'cursor', point: null });
+          }
+          statusText.innerText = "カメラに人差し指を向けてください";
         }
-        canvasCtx.restore();
       });
 
       if (isCameraOwner) {
@@ -220,66 +329,8 @@
         camera.start().then(() => {
           const stream = videoElement.srcObject;
           peer.call(targetId, stream);
-          statusText.innerText = "配信中！カメラに手を向けて操作してください";
+          statusText.innerText = "配信中！人差し指で自由に描画できます";
         });
-      }
-    }
-
-    // Windows側で受信データからハンドメッシュを描画
-    function drawHandMesh(allHandLandmarks) {
-      canvasElement.width = videoElement.videoWidth || 800;
-      canvasElement.height = videoElement.videoHeight || 600;
-
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-      if (allHandLandmarks) {
-        for (const landmarks of allHandLandmarks) {
-          renderMeshOnCanvas(landmarks);
-        }
-      }
-      canvasCtx.restore();
-    }
-
-    // 画面上に手構造のワイヤーフレーム＆ジョイントを描画する関数
-    function renderMeshOnCanvas(landmarks) {
-      const w = canvasElement.width;
-      const h = canvasElement.height;
-
-      // 1. ワイヤーフレーム（メッシュ線）の描画
-      canvasCtx.strokeStyle = '#00ffcc'; // メッシュ線の色（シアン/ネオンブルー）
-      canvasCtx.lineWidth = 2;
-
-      for (const edge of HAND_CONNECTIONS) {
-        const p1 = landmarks[edge[0]];
-        const p2 = landmarks[edge[1]];
-
-        canvasCtx.beginPath();
-        canvasCtx.moveTo(p1.x * w, p1.y * h);
-        canvasCtx.lineTo(p2.x * w, p2.y * h);
-        canvasCtx.stroke();
-      }
-
-      // 2. 関節（ジョイントノード）の点描画
-      for (let i = 0; i < landmarks.length; i++) {
-        const pt = landmarks[i];
-        const x = pt.x * w;
-        const y = pt.y * h;
-
-        canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 4, 0, 2 * Math.PI);
-
-        // 指先（4, 8, 12, 16, 20）は別の色で強調
-        if ([4, 8, 12, 16, 20].includes(i)) {
-          canvasCtx.fillStyle = '#ff0055'; // 指先: マゼンタ
-        } else {
-          canvasCtx.fillStyle = '#ffffff'; // ノード: 白
-        }
-
-        canvasCtx.fill();
-        canvasCtx.strokeStyle = '#000000';
-        canvasCtx.lineWidth = 1;
-        canvasCtx.stroke();
       }
     }
   </script>
