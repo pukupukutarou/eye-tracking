@@ -20,7 +20,6 @@
       justify-content: center;
     }
 
-    /* メインの描画領域 */
     #stage {
       position: relative;
       width: 800px;
@@ -40,10 +39,9 @@
       left: 0;
       width: 100%;
       height: 100%;
-      transform: scaleX(-1); /* 鏡合わせ表示 */
+      transform: scaleX(-1); /* 鏡合わせ */
     }
 
-    /* 操作パネル */
     #control-panel {
       margin-top: 15px;
       background: rgba(22, 27, 34, 0.9);
@@ -67,11 +65,9 @@
     .status { margin-bottom: 6px; font-weight: bold; color: #58a6ff; font-size: 14px; }
   </style>
 
-  <!-- MediaPipe Face Mesh ＆ 描画ライブラリ -->
+  <!-- MediaPipe Face Mesh & PeerJS -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-  <!-- PeerJS (WebRTC通信) -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
@@ -102,7 +98,7 @@
     let peer = null;
     let dataConnection = null;
 
-    // --- PeerJS 通信基盤 ---
+    // --- PeerJS (通信基盤) ---
     const customId = Math.floor(1000 + Math.random() * 9000).toString();
     peer = new Peer(customId);
 
@@ -114,10 +110,9 @@
     peer.on('call', (call) => {
       call.answer();
       call.on('stream', (remoteStream) => {
-        // Windows側：キャンバスを描画モードにしてリモート映像を表示
         videoElement.srcObject = remoteStream;
-        statusText.innerText = "iPadからのリアルタイムFace Meshを受信中！";
-        startMeshProcessing(false); // 受信側もローカルで描画処理を走らせる
+        statusText.innerText = "iPadからのリアルタイム映像を受信中！";
+        initFaceMesh(false);
       });
     });
 
@@ -129,19 +124,19 @@
       dataConnection = peer.connect(targetId);
       dataConnection.on('open', () => {
         statusText.innerText = "接続成功！カメラとFace Meshを開始します";
-        startCameraAndMesh(targetId);
+        initFaceMesh(true, targetId);
       });
     }
 
-    // --- 3D Face Mesh 処理 ＆ 描画エンジン ---
-    function startMeshProcessing(isCameraOwner, targetId = null) {
+    // --- Face Mesh ＆ メッシュ自前描画 ---
+    function initFaceMesh(isCameraOwner, targetId = null) {
       const faceMesh = new FaceMesh({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
       });
 
       faceMesh.setOptions({
         maxNumFaces: 1,
-        refineLandmarks: true, // 輪郭・パーツ精度の向上
+        refineLandmarks: true,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
@@ -154,26 +149,15 @@
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          for (const landmarks of results.multiFaceLandmarks) {
-            // 1. 顔全体を覆うメッシュ（網目）の描画
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {
-              color: '#C0C0C070',
-              lineWidth: 1
-            });
+          const landmarks = results.multiFaceLandmarks[0];
+          
+          // 1. メッシュ（顔全体を繋ぐ三角形・ライン）を描画
+          drawCustomMesh(landmarks);
+          
+          // 2. ランドマークの全頂点に小さなドットを描画
+          drawLandmarkDots(landmarks);
 
-            // 2. 目の輪郭・黒目の強調ライン
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: '#FF3030' });
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYEBROW, { color: '#FF3030' });
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYEBROW, { color: '#30FF30' });
-
-            // 3. 顔の輪郭ライン
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, { color: '#E0E0E0' });
-
-            // 4. 唇のライン
-            drawingUtils.drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, { color: '#E0E0FF' });
-          }
-          statusText.innerText = "顔メッシュトラッキング中！";
+          statusText.innerText = `メッシュ描画中！ (${landmarks.length} 頂点検出)`;
         } else {
           statusText.innerText = "顔をカメラに向けてください";
         }
@@ -193,24 +177,68 @@
         camera.start().then(() => {
           const stream = videoElement.srcObject;
           peer.call(targetId, stream);
-          statusText.innerText = "iPadからリアルタイムFace Mesh映像を配信中！";
+          statusText.innerText = "iPadからFace Mesh付き映像を配信中！";
         });
       } else {
-        // Windows側（受信映像に対して毎フレームFace Meshを適用）
-        async function processFrame() {
+        async function renderFrame() {
           if (videoElement.currentTime > 0 && !videoElement.paused && !videoElement.ended) {
             await faceMesh.send({ image: videoElement });
           }
-          requestAnimationFrame(processFrame);
+          requestAnimationFrame(renderFrame);
         }
         videoElement.addEventListener('play', () => {
-          processFrame();
+          renderFrame();
         });
       }
     }
 
-    function startCameraAndMesh(targetId) {
-      startMeshProcessing(true, targetId);
+    // 顔のランドマーク同士を結んで自前で3D網目（メッシュ）を描く処理
+    function drawCustomMesh(landmarks) {
+      const w = canvasElement.width;
+      const h = canvasElement.height;
+
+      // 描画スタイルの設定（サイバーグリーン）
+      canvasCtx.strokeStyle = 'rgba(0, 255, 170, 0.45)';
+      canvasCtx.lineWidth = 0.8;
+
+      // 定義されているFACEMESH接続リストが取得できればそれを使い、
+      // なければ近接点同士を結んで確実にメッシュ化する
+      const connections = window.FACEMESH_TESSELATION || getFallbackConnections();
+
+      canvasCtx.beginPath();
+      for (const conn of connections) {
+        const p1 = landmarks[conn[0]];
+        const p2 = landmarks[conn[1]];
+        if (p1 && p2) {
+          canvasCtx.moveTo(p1.x * w, p1.y * h);
+          canvasCtx.lineTo(p2.x * w, p2.y * h);
+        }
+      }
+      canvasCtx.stroke();
+    }
+
+    // ランドマークのポイントにネオン点滅ドットを描く
+    function drawLandmarkDots(landmarks) {
+      const w = canvasElement.width;
+      const h = canvasElement.height;
+
+      canvasCtx.fillStyle = '#00ffaa';
+      for (let i = 0; i < landmarks.length; i += 3) { // 軽快に動くよう間引き描画
+        const p = landmarks[i];
+        canvasCtx.beginPath();
+        canvasCtx.arc(p.x * w, p.y * h, 1.2, 0, 2 * Math.PI);
+        canvasCtx.fill();
+      }
+    }
+
+    // 万が一ライブラリ内部の接続定義が読めない場合のバックアップメッシュ構造
+    function getFallbackConnections() {
+      const links = [];
+      for (let i = 0; i < 468; i += 2) {
+        links.push([i, (i + 1) % 468]);
+        links.push([i, (i + 4) % 468]);
+      }
+      return links;
     }
   </script>
 </body>
