@@ -2,127 +2,137 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>iPad Camera & Tracking Streamer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>iPad Camera Sender</title>
   <style>
-    body { background-color: #0d1117; color: #c9d1d9; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-    #stage { position: relative; width: 640px; height: 480px; max-width: 90vw; max-height: 60vh; border-radius: 8px; overflow: hidden; background: #000; }
-    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-    /* インカメラの鏡像表示 */
-    video, canvas { transform: scaleX(-1); }
-    #control-panel { margin-top: 16px; background: #161b22; padding: 16px; border-radius: 8px; text-align: center; }
-    input, button { padding: 8px; font-size: 1rem; margin: 4px; border-radius: 4px; border: 1px solid #30363d; }
-    input { width: 120px; text-align: center; background: #0d1117; color: #fff; }
-    button { background: #238636; color: white; cursor: pointer; border: none; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    h2 { margin-bottom: 16px; font-size: 1.2rem; }
+    #stage {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #30363d;
+    }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    #control-panel {
+      margin-top: 16px;
+      background: #161b22;
+      padding: 16px 24px;
+      border-radius: 12px;
+      border: 1px solid #30363d;
+      text-align: center;
+      width: 100%;
+      max-width: 400px;
+    }
+    .input-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+    input[type="text"] {
+      padding: 10px;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #0d1117;
+      color: #fff;
+      width: 120px;
+      text-align: center;
+    }
+    button {
+      padding: 10px 16px;
+      font-size: 1rem;
+      border-radius: 6px;
+      border: none;
+      background: #238636;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { background: #21262d; color: #484f58; }
+    #status { margin-top: 12px; font-size: 0.9rem; color: #58a6ff; }
   </style>
-
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 </head>
 <body>
 
-  <h2>📱 iPad 配信 & トラッキング画面</h2>
+  <h2>📱 iPad 映像配信</h2>
+
   <div id="stage">
     <video id="webcam" autoplay playsinline muted></video>
-    <canvas id="output_canvas"></canvas>
   </div>
 
   <div id="control-panel">
-    <div>接続相手（Windows）の4桁IDを入力:</div>
-    <input type="text" id="target-id" placeholder="4桁数字" maxlength="4">
-    <button id="connect-btn" onclick="startStream()">接続 & 配信開始</button>
-    <div id="status" style="margin-top:8px; color:#58a6ff;">待機中</div>
+    <div>Windows側に表示されている4桁IDを入力:</div>
+    <div class="input-row">
+      <input type="text" id="target-id" placeholder="4桁数字" maxlength="4" pattern="[0-9]*" inputmode="numeric">
+      <button id="start-btn" onclick="startStreaming()">配信開始</button>
+    </div>
+    <div id="status">待機中</div>
   </div>
 
   <script>
     const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('output_canvas');
-    const canvasCtx = canvasElement.getContext('2d');
     const statusText = document.getElementById('status');
+    const startBtn = document.getElementById('start-btn');
 
     let peer = new Peer();
-    let mediaCall = null;
-    let dataConn = null;
+    let localStream = null;
 
-    // MediaPipe Hands の設定
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    peer.on('open', () => {
+      statusText.innerText = "準備完了。4桁IDを入力して配信開始を押してください。";
     });
 
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+    peer.on('error', (err) => {
+      console.error(err);
+      statusText.innerText = `エラーが発生しました: ${err.type}`;
+      startBtn.disabled = false;
     });
 
-    hands.onResults((results) => {
-      // キャンバスをクリア
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0];
-        const indexTip = landmarks[8]; // 人差し指の先端 (Landmark #8)
-
-        const x = indexTip.x * canvasElement.width;
-        const y = indexTip.y * canvasElement.height;
-
-        // 水色の印を描画
-        canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 12, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = "#00ffff"; // 水色
-        canvasCtx.fill();
-        canvasCtx.lineWidth = 3;
-        canvasCtx.strokeStyle = "#ffffff";
-        canvasCtx.stroke();
-
-        // Windows側に座標データを送信（0.0～1.0の正規化座標）
-        if (dataConn && dataConn.open) {
-          dataConn.send({ x: indexTip.x, y: indexTip.y });
-        }
-      }
-      canvasCtx.restore();
-    });
-
-    async function startStream() {
+    async function startStreaming() {
       const targetId = document.getElementById('target-id').value.trim();
-      if (targetId.length !== 4) return alert("接続先の4桁IDを入力してください");
+      if (targetId.length !== 4) {
+        alert("送信先の4桁IDを入力してください。");
+        return;
+      }
 
-      statusText.innerText = "カメラ取得中...";
+      startBtn.disabled = true;
+      statusText.innerText = "カメラアクセスを取得中...";
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: 640, height: 480 },
+        // iPadの外カメラ（背後）を優先取得したい場合は facingMode: 'environment' に変更可能
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
         });
 
-        videoElement.srcObject = stream;
-        videoElement.onloadedmetadata = () => {
-          canvasElement.width = videoElement.videoWidth;
-          canvasElement.height = videoElement.videoHeight;
-        };
+        videoElement.srcObject = localStream;
+        statusText.innerText = "Windowsへ接続中...";
 
-        // 映像ストリームを発信
-        mediaCall = peer.call(targetId, stream);
-        // 座標データ通信を発信
-        dataConn = peer.connect(targetId);
+        const call = peer.call(targetId, localStream);
 
-        dataConn.on('open', () => {
-          statusText.innerText = "配信中！(Windows接続完了)";
+        call.on('close', () => {
+          statusText.innerText = "通信が切断されました";
+          startBtn.disabled = false;
         });
 
-        // カメラ解析ループ開始
-        const camera = new Camera(videoElement, {
-          onFrame: async () => { await hands.send({ image: videoElement }); },
-          width: 640,
-          height: 480
-        });
-        camera.start();
+        statusText.innerText = "配信中！映像を送信しています。";
 
       } catch (err) {
-        statusText.innerText = "エラー: カメラの起動に失敗しました";
+        console.error(err);
+        statusText.innerText = "カメラの起動に失敗しました。アクセス権限を確認してください。";
+        startBtn.disabled = false;
       }
     }
   </script>
