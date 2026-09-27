@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>iPad 視線推定（キャリブレーション付き）</title>
+  <title>iPad 視線追跡 ＆ WebRTC ストリーミング</title>
   <style>
     body {
       margin: 0;
@@ -14,257 +14,224 @@
       overflow: hidden;
       width: 100vw;
       height: 100vh;
-      user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
 
-    /* カメラ映像（背景で小さく確認用） */
-    #webcam-container {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      width: 160px;
-      height: 120px;
+    #video-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      max-width: 95vw;
+      max-height: 70vh;
       border: 2px solid #30363d;
-      border-radius: 8px;
+      border-radius: 12px;
       overflow: hidden;
-      z-index: 10;
+      background: #000;
     }
-    video, #canvas-preview {
+
+    video, canvas {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      transform: scaleX(-1);
+      transform: scaleX(-1); /* 鏡合わせ */
     }
 
-    /* キャリブレーションターゲット（赤い丸） */
-    #target {
+    /* 視線ポイント（受け取り側・送信側共通） */
+    #gaze-dot {
       position: absolute;
-      width: 40px;
-      height: 40px;
-      background-color: #ff0055;
-      border: 3px solid #fff;
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-      box-shadow: 0 0 15px #ff0055;
-      transition: all 0.3s ease;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 14px;
-    }
-
-    /* 推定された視線ポインタ（青い丸） */
-    #gaze-pointer {
-      position: absolute;
-      width: 30px;
-      height: 30px;
-      background-color: rgba(0, 170, 255, 0.7);
+      width: 24px;
+      height: 24px;
+      background-color: rgba(255, 0, 85, 0.8);
       border: 2px solid #fff;
       border-radius: 50%;
       transform: translate(-50%, -50%);
-      box-shadow: 0 0 20px #00aaff;
+      box-shadow: 0 0 15px #ff0055;
       pointer-events: none;
-      z-index: 90;
+      z-index: 10;
       display: none;
     }
 
-    /* 案内UI */
-    #ui-panel {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(22, 27, 34, 0.85);
-      padding: 15px 25px;
-      border-radius: 12px;
+    #control-panel {
+      margin-top: 15px;
+      background: rgba(22, 27, 34, 0.9);
+      padding: 15px 20px;
+      border-radius: 10px;
       border: 1px solid #30363d;
       text-align: center;
-      z-index: 100;
+      max-width: 90vw;
     }
-    button {
-      background: #238636;
-      color: white;
-      border: none;
-      padding: 10px 20px;
+
+    input, button {
+      padding: 8px 12px;
       font-size: 16px;
+      margin: 4px;
       border-radius: 6px;
-      cursor: pointer;
-      margin-top: 8px;
+      border: 1px solid #30363d;
     }
+    input { background: #161b22; color: #fff; width: 140px; text-align: center; }
+    button { background: #238636; color: white; cursor: pointer; border: none; }
+    button:hover { background: #2ea043; }
+    .status { margin-bottom: 8px; font-weight: bold; color: #58a6ff; }
   </style>
 
+  <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  <!-- PeerJS (WebRTC通信用) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
 
-  <div id="webcam-container">
+  <h2>👀 iPad 視線追跡 ライブビューワー</h2>
+
+  <div id="video-container">
     <video id="webcam" autoplay playsinline></video>
-    <canvas id="canvas-preview"></canvas>
+    <canvas id="output-canvas"></canvas>
+    <div id="gaze-dot"></div>
   </div>
 
-  <!-- キャリブレーション点 & 視線ポインタ -->
-  <div id="target" style="top: 50%; left: 50%;">1</div>
-  <div id="gaze-pointer"></div>
-
-  <div id="ui-panel">
-    <div id="status-text">カメラを読み込んでいます...</div>
-    <button id="start-btn" style="display: none;" onclick="startCalibration()">調整（キャリブレーション）開始</button>
+  <div id="control-panel">
+    <div id="status" class="status">通信初期化中...</div>
+    
+    <!-- モード切り替え・接続設定UI -->
+    <div id="connection-ui">
+      <div>あなたのID: <span id="my-id" style="color: #f2e05a; font-weight: bold;">----</span></div>
+      <div style="margin-top: 10px;">
+        <input type="text" id="target-id" placeholder="相手のIDを入力">
+        <button onclick="connectToPeer()">iPadからWindowsに接続</button>
+      </div>
+    </div>
   </div>
 
   <script>
     const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('canvas-preview');
+    const canvasElement = document.getElementById('output-canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const target = document.getElementById('target');
-    const gazePointer = document.getElementById('gaze-pointer');
-    const statusText = document.getElementById('status-text');
-    const startBtn = document.getElementById('start-btn');
+    const gazeDot = document.getElementById('gaze-dot');
+    const statusText = document.getElementById('status');
+    const myIdSpan = document.getElementById('my-id');
 
-    let currentIrisX = 0, currentIrisY = 0;
-    let isTracking = false;
-    let isCalibrating = false;
+    let peer = null;
+    let dataConnection = null;
+    let mediaCall = null;
+    let isSender = false; // iPad側かどうかのフラグ
 
-    // キャリブレーション用の点（画面の割合 0.1〜0.9）
-    const points = [
-      { x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 },
-      { x: 0.5, y: 0.5 },
-      { x: 0.1, y: 0.9 }, { x: 0.9, y: 0.9 }
-    ];
-    let pointIndex = 0;
-    let calibrationData = [];
+    // --- 1. PeerJS（WebRTC通信）の初期化 ---
+    // ランダムな4桁風のIDを生成
+    const customId = Math.floor(1000 + Math.random() * 9000).toString();
+    peer = new Peer(customId);
 
-    // 視線マッピング用変数（最小・最大値）
-    let minX = 1, maxX = 0, minY = 1, maxY = 0;
-
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    peer.on('open', (id) => {
+      myIdSpan.innerText = id;
+      statusText.innerText = "準備完了。Windowsで開いている場合はこのIDをiPadに入力してください。";
     });
 
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+    // 受信側（Windows）の処理：接続要求を受ける
+    peer.on('connection', (conn) => {
+      dataConnection = conn;
+      setupDataReceiver();
     });
 
-    faceMesh.onResults(onResults);
+    peer.on('call', (call) => {
+      // iPadからの映像ストリームを受信
+      call.answer();
+      call.on('stream', (remoteStream) => {
+        videoElement.srcObject = remoteStream;
+        statusText.innerText = "iPadからのリアルタイム映像・視線データを受信中！";
+      });
+    });
 
-    function onResults(results) {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    // 送信側（iPad）の処理：IDを指定して接続
+    function connectToPeer() {
+      const targetId = document.getElementById('target-id').value;
+      if (!targetId) return alert("接続先のIDを入力してください");
 
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        
-        // 左右の虹彩の中心位置
-        const leftIris = landmarks[468];
-        const rightIris = landmarks[473];
+      statusText.innerText = "接続中...";
+      
+      // データ通信の接続
+      dataConnection = peer.connect(targetId);
+      dataConnection.on('open', () => {
+        statusText.innerText = "Windowsとの接続成功！カメラを開始します...";
+        isSender = true;
+        startCameraAndTracking(targetId);
+      });
+    }
 
-        // 目の中心座標（鏡合わせのためXを反転）
-        currentIrisX = 1.0 - ((leftIris.x + rightIris.x) / 2);
-        currentIrisY = (leftIris.y + rightIris.y) / 2;
-
-        if (!isTracking) {
-          isTracking = true;
-          statusText.innerText = "顔を認識しました！";
-          startBtn.style.display = "inline-block";
+    function setupDataReceiver() {
+      dataConnection.on('data', (data) => {
+        // Windows側で視線座標(X, Y)を受け取って赤点を動かす
+        if (data.type === 'gaze') {
+          gazeDot.style.display = 'block';
+          gazeDot.style.left = (data.x * 100) + '%';
+          gazeDot.style.top = (data.y * 100) + '%';
         }
-
-        // 調整済みなら視線ポインタを更新
-        if (!isCalibrating && calibrationData.length >= 5) {
-          updateGazePointer();
-        }
-      } else {
-        statusText.innerText = "顔が見つかりません。カメラの方を向いてください。";
-      }
+      });
     }
 
-    function startCalibration() {
-      isCalibrating = true;
-      pointIndex = 0;
-      calibrationData = [];
-      startBtn.style.display = "none";
-      gazePointer.style.display = "none";
-      moveTarget();
-    }
-
-    function moveTarget() {
-      if (pointIndex < points.length) {
-        const p = points[pointIndex];
-        target.style.left = (p.x * 100) + '%';
-        target.style.top = (p.y * 100) + '%';
-        target.innerText = pointIndex + 1;
-        statusText.innerText = `赤い丸 (${pointIndex + 1}/5) をじっと見つめてタップしてください`;
-      } else {
-        finishCalibration();
-      }
-    }
-
-    // 丸をタップしたらその時の「目の位置」を記録
-    window.addEventListener('pointerdown', (e) => {
-      if (!isCalibrating) return;
-
-      calibrationData.push({
-        screenX: points[pointIndex].x,
-        screenY: points[pointIndex].y,
-        irisX: currentIrisX,
-        irisY: currentIrisY
+    // --- 2. iPad側のカメラ ＆ MediaPipe処理 ---
+    function startCameraAndTracking(targetId) {
+      const faceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
       });
 
-      pointIndex++;
-      moveTarget();
-    });
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
 
-    function finishCalibration() {
-      isCalibrating = false;
-      target.style.display = 'none';
+      faceMesh.onResults((results) => {
+        canvasElement.width = videoElement.videoWidth;
+        canvasElement.height = videoElement.videoHeight;
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // 目の動く範囲（最小値・最大値）を計算
-      const irisXs = calibrationData.map(d => d.irisX);
-      const irisYs = calibrationData.map(d => d.irisY);
-      
-      minX = Math.min(...irisXs);
-      maxX = Math.max(...irisXs);
-      minY = Math.min(...irisYs);
-      maxY = Math.max(...irisYs);
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          const landmarks = results.multiFaceLandmarks[0];
+          const leftIris = landmarks[468];
+          const rightIris = landmarks[473];
 
-      statusText.innerText = "調整完了！青い丸があなたの視線を追跡します。";
-      gazePointer.style.display = "block";
+          // 黒目の中心（相対座標 0.0 ~ 1.0）
+          const irisX = (leftIris.x + rightIris.x) / 2;
+          const irisY = (leftIris.y + rightIris.y) / 2;
+
+          // 自分の画面に描画
+          gazeDot.style.display = 'block';
+          gazeDot.style.left = ((1.0 - irisX) * 100) + '%';
+          gazeDot.style.top = (irisY * 100) + '%';
+
+          // Windows側へリアルタイム視線データを送信
+          if (dataConnection && dataConnection.open) {
+            dataConnection.send({
+              type: 'gaze',
+              x: 1.0 - irisX, // 鏡合わせ補正
+              y: irisY
+            });
+          }
+        }
+      });
+
+      const camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await faceMesh.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480,
+        facingMode: 'user'
+      });
+
+      camera.start().then(() => {
+        // カメラ映像ストリームをWindows側に送信
+        const stream = videoElement.srcObject;
+        peer.call(targetId, stream);
+        statusText.innerText = "配信中！iPadのカメラ映像と視線をWindowsに共有しています。";
+      });
     }
-
-    function updateGazePointer() {
-      // 目の移動量を画面幅（0〜1）に正規化
-      let normalizedX = (currentIrisX - minX) / (maxX - minX || 1);
-      let normalizedY = (currentIrisY - minY) / (maxY - minY || 1);
-
-      // 画面はみ出し防止
-      normalizedX = Math.max(0, Math.min(1, normalizedX));
-      normalizedY = Math.max(0, Math.min(1, normalizedY));
-
-      // 画面の実際のピクセル位置に変換
-      const screenX = normalizedX * window.innerWidth;
-      const screenY = normalizedY * window.innerHeight;
-
-      gazePointer.style.left = screenX + 'px';
-      gazePointer.style.top = screenY + 'px';
-    }
-
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await faceMesh.send({ image: videoElement });
-      },
-      width: 640,
-      height: 480,
-      facingMode: 'user'
-    });
-
-    camera.start();
   </script>
 </body>
 </html>
