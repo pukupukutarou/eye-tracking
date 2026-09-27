@@ -2,136 +2,269 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>iPad 視線追跡テスト</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>iPad 視線推定（キャリブレーション付き）</title>
   <style>
     body {
       margin: 0;
       padding: 0;
-      background-color: #111;
+      background-color: #0d1117;
       color: #fff;
       font-family: sans-serif;
       overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      width: 100vw;
       height: 100vh;
+      user-select: none;
     }
-    #container {
-      position: relative;
-      width: 640px;
-      height: 480px;
-      max-width: 100vw;
-      max-height: 70vh;
+
+    /* カメラ映像（背景で小さく確認用） */
+    #webcam-container {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 160px;
+      height: 120px;
+      border: 2px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+      z-index: 10;
     }
-    video, canvas {
+    video, #canvas-preview {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      border-radius: 12px;
-      transform: scaleX(-1); /* 鏡合わせ表示 */
+      transform: scaleX(-1);
     }
-    #info {
-      margin-top: 15px;
-      font-size: 18px;
+
+    /* キャリブレーションターゲット（赤い丸） */
+    #target {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      background-color: #ff0055;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 15px #ff0055;
+      transition: all 0.3s ease;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    /* 推定された視線ポインタ（青い丸） */
+    #gaze-pointer {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background-color: rgba(0, 170, 255, 0.7);
+      border: 2px solid #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 20px #00aaff;
+      pointer-events: none;
+      z-index: 90;
+      display: none;
+    }
+
+    /* 案内UI */
+    #ui-panel {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(22, 27, 34, 0.85);
+      padding: 15px 25px;
+      border-radius: 12px;
+      border: 1px solid #30363d;
       text-align: center;
+      z-index: 100;
+    }
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 8px;
     }
   </style>
 
-  <!-- MediaPipe Face Landmarker 読み込み -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
-  <h2>👀 iPad 視線検知プロトタイプ</h2>
-  
-  <div id="container">
+  <div id="webcam-container">
     <video id="webcam" autoplay playsinline></video>
-    <canvas id="output_canvas"></canvas>
+    <canvas id="canvas-preview"></canvas>
   </div>
 
-  <div id="info">カメラを準備中...</div>
+  <!-- キャリブレーション点 & 視線ポインタ -->
+  <div id="target" style="top: 50%; left: 50%;">1</div>
+  <div id="gaze-pointer"></div>
+
+  <div id="ui-panel">
+    <div id="status-text">カメラを読み込んでいます...</div>
+    <button id="start-btn" style="display: none;" onclick="startCalibration()">調整（キャリブレーション）開始</button>
+  </div>
 
   <script>
     const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('output_canvas');
+    const canvasElement = document.getElementById('canvas-preview');
     const canvasCtx = canvasElement.getContext('2d');
-    const infoElement = document.getElementById('info');
+    const target = document.getElementById('target');
+    const gazePointer = document.getElementById('gaze-pointer');
+    const statusText = document.getElementById('status-text');
+    const startBtn = document.getElementById('start-btn');
 
-    // FaceMesh（顔・瞳のランドマーク抽出）の初期化
+    let currentIrisX = 0, currentIrisY = 0;
+    let isTracking = false;
+    let isCalibrating = false;
+
+    // キャリブレーション用の点（画面の割合 0.1〜0.9）
+    const points = [
+      { x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 },
+      { x: 0.5, y: 0.5 },
+      { x: 0.1, y: 0.9 }, { x: 0.9, y: 0.9 }
+    ];
+    let pointIndex = 0;
+    let calibrationData = [];
+
+    // 視線マッピング用変数（最小・最大値）
+    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+
     const faceMesh = new FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
     });
 
     faceMesh.setOptions({
       maxNumFaces: 1,
-      refineLandmarks: true, // 虹彩（黒目）の検出を有効化
+      refineLandmarks: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
 
     faceMesh.onResults(onResults);
 
-    // 検出結果の描画処理
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
-
-      canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
-
-        // 左右の虹彩（黒目）のインデックス
-        // 左目虹彩: 468, 右目虹彩: 473
+        
+        // 左右の虹彩の中心位置
         const leftIris = landmarks[468];
         const rightIris = landmarks[473];
 
-        // 描画: 黒目の位置に赤い円を描く
-        drawEyeCircle(leftIris);
-        drawEyeCircle(rightIris);
+        // 目の中心座標（鏡合わせのためXを反転）
+        currentIrisX = 1.0 - ((leftIris.x + rightIris.x) / 2);
+        currentIrisY = (leftIris.y + rightIris.y) / 2;
 
-        // 簡易的な視線方向の判定（黒目の位置から計算）
-        const eyeX = (leftIris.x + rightIris.x) / 2;
-        const eyeY = (leftIris.y + rightIris.y) / 2;
+        if (!isTracking) {
+          isTracking = true;
+          statusText.innerText = "顔を認識しました！";
+          startBtn.style.display = "inline-block";
+        }
 
-        infoElement.innerText = `検出成功！ 目の相対座標: X=${eyeX.toFixed(2)}, Y=${eyeY.toFixed(2)}`;
+        // 調整済みなら視線ポインタを更新
+        if (!isCalibrating && calibrationData.length >= 5) {
+          updateGazePointer();
+        }
       } else {
-        infoElement.innerText = "顔をカメラに向けてください";
+        statusText.innerText = "顔が見つかりません。カメラの方を向いてください。";
       }
-      canvasCtx.restore();
     }
 
-    function drawEyeCircle(point) {
-      const x = point.x * canvasElement.width;
-      const y = point.y * canvasElement.height;
-      canvasCtx.beginPath();
-      canvasCtx.arc(x, y, 6, 0, 2 * Math.PI);
-      canvasCtx.fillStyle = '#ff0055';
-      canvasCtx.fill();
+    function startCalibration() {
+      isCalibrating = true;
+      pointIndex = 0;
+      calibrationData = [];
+      startBtn.style.display = "none";
+      gazePointer.style.display = "none";
+      moveTarget();
     }
 
-    // カメラの起動処理（iPad対応）
+    function moveTarget() {
+      if (pointIndex < points.length) {
+        const p = points[pointIndex];
+        target.style.left = (p.x * 100) + '%';
+        target.style.top = (p.y * 100) + '%';
+        target.innerText = pointIndex + 1;
+        statusText.innerText = `赤い丸 (${pointIndex + 1}/5) をじっと見つめてタップしてください`;
+      } else {
+        finishCalibration();
+      }
+    }
+
+    // 丸をタップしたらその時の「目の位置」を記録
+    window.addEventListener('pointerdown', (e) => {
+      if (!isCalibrating) return;
+
+      calibrationData.push({
+        screenX: points[pointIndex].x,
+        screenY: points[pointIndex].y,
+        irisX: currentIrisX,
+        irisY: currentIrisY
+      });
+
+      pointIndex++;
+      moveTarget();
+    });
+
+    function finishCalibration() {
+      isCalibrating = false;
+      target.style.display = 'none';
+
+      // 目の動く範囲（最小値・最大値）を計算
+      const irisXs = calibrationData.map(d => d.irisX);
+      const irisYs = calibrationData.map(d => d.irisY);
+      
+      minX = Math.min(...irisXs);
+      maxX = Math.max(...irisXs);
+      minY = Math.min(...irisYs);
+      maxY = Math.max(...irisYs);
+
+      statusText.innerText = "調整完了！青い丸があなたの視線を追跡します。";
+      gazePointer.style.display = "block";
+    }
+
+    function updateGazePointer() {
+      // 目の移動量を画面幅（0〜1）に正規化
+      let normalizedX = (currentIrisX - minX) / (maxX - minX || 1);
+      let normalizedY = (currentIrisY - minY) / (maxY - minY || 1);
+
+      // 画面はみ出し防止
+      normalizedX = Math.max(0, Math.min(1, normalizedX));
+      normalizedY = Math.max(0, Math.min(1, normalizedY));
+
+      // 画面の実際のピクセル位置に変換
+      const screenX = normalizedX * window.innerWidth;
+      const screenY = normalizedY * window.innerHeight;
+
+      gazePointer.style.left = screenX + 'px';
+      gazePointer.style.top = screenY + 'px';
+    }
+
     const camera = new Camera(videoElement, {
       onFrame: async () => {
         await faceMesh.send({ image: videoElement });
       },
       width: 640,
       height: 480,
-      facingMode: 'user' // インカメラ指定
+      facingMode: 'user'
     });
 
-    camera.start().then(() => {
-      infoElement.innerText = "カメラ起動完了。顔を映してください。";
-    }).catch(err => {
-      infoElement.innerText = "カメラの起動に失敗しました。HTTPSでアクセスしているか確認してください。";
-      console.error(err);
-    });
+    camera.start();
   </script>
 </body>
 </html>
