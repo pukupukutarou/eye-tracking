@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FaceMesh Camera Tracker</title>
+  <title>iPad WebCamera System</title>
 
   <!-- PeerJS -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
@@ -22,7 +22,7 @@
       overflow: hidden;
     }
 
-    /* 映像＋Canvasレイアウト */
+    /* 映像＋Canvas表示エリア */
     #container {
       position: relative;
       width: 100vw;
@@ -39,7 +39,7 @@
       object-fit: contain;
     }
 
-    /* ミラー設定用クラス */
+    /* ミラー（左右反転）制御クラス */
     .mirror {
       transform: scaleX(-1);
     }
@@ -49,14 +49,15 @@
       position: absolute;
       top: 15px;
       left: 15px;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.8);
       padding: 15px;
       border-radius: 10px;
       z-index: 10;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      max-width: 300px;
+      max-width: 320px;
+      border: 1px solid #333;
     }
 
     input, button {
@@ -92,28 +93,30 @@
 <body class="pc-mode">
 
   <div id="container">
+    <!-- iPadのカメラストリームを再生するvideo要素 -->
     <video id="webcam" playsinline autoplay muted class="mirror"></video>
+    <!-- FaceMesh（オーバーレイ描画用） -->
     <canvas id="mesh-canvas" class="mirror"></canvas>
   </div>
 
   <div id="ui-panel">
     <!-- PC用 UI -->
     <div class="pc-ui">
-      <div><b>PC モード</b></div>
+      <div><b>PC モード（受信側）</b></div>
       <div>ID: <input type="text" id="pc-id-input" value="1234"></div>
       <button id="pc-start-btn">このIDで待機する</button>
-      <div id="pc-status">IDを決めて開始してください</div>
+      <div id="pc-status">IDを決めて「待機する」を押してください</div>
     </div>
 
     <!-- iPad用 UI -->
     <div class="ipad-ui">
-      <div><b>iPad モード</b></div>
+      <div><b>iPad モード（カメラ送信側）</b></div>
       <input type="text" id="target-id-input" placeholder="PCのIDを入力" value="1234">
-      <button id="connect-btn">PCに接続する</button>
+      <button id="connect-btn">PCに接続してカメラ送信</button>
       <div id="ipad-status">PCのIDを入力してください</div>
     </div>
 
-    <!-- 共通設定: ミラー切替 -->
+    <!-- 共通設定: ミラー反転スイッチ -->
     <button id="toggle-mirror-btn">ミラー反転 (ON/OFF)</button>
   </div>
 
@@ -126,10 +129,9 @@
     const ctx = canvasEl.getContext('2d');
     const toggleMirrorBtn = document.getElementById('toggle-mirror-btn');
 
-    let currentLandmarks = null;
     let isMirrored = true;
 
-    // ミラー設定の切り替え
+    // ミラー設定（左右反転）の切り替え
     toggleMirrorBtn.addEventListener('click', () => {
       isMirrored = !isMirrored;
       if (isMirrored) {
@@ -149,7 +151,7 @@
     videoEl.addEventListener('loadedmetadata', resizeCanvas);
     window.addEventListener('resize', resizeCanvas);
 
-    // FaceMesh 描画処理
+    // FaceMesh メッシュ描画関数
     function drawMesh(landmarks) {
       ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
       if (!landmarks) return;
@@ -157,7 +159,6 @@
       const w = canvasEl.width;
       const h = canvasEl.height;
 
-      // メッシュ線の描画
       ctx.strokeStyle = '#00ffcc';
       ctx.lineWidth = 1;
 
@@ -171,7 +172,6 @@
           ctx.stroke();
         }
       } else {
-        // フォールバック: 全ランドマークにドットを描画
         ctx.fillStyle = '#00ffcc';
         for (const p of landmarks) {
           ctx.beginPath();
@@ -182,16 +182,16 @@
     }
 
     if (isIpad) {
-      // ---------------- 【 iPad モード 】 ----------------
+      // ---------------- 【 iPad モード（Webカメラ化＋送信） 】 ----------------
       document.body.className = 'ipad-mode';
       const targetIdInput = document.getElementById('target-id-input');
       const connectBtn = document.getElementById('connect-btn');
       const ipadStatus = document.getElementById('ipad-status');
 
       const peer = new Peer();
-      let conn = null;
+      let localStream = null;
 
-      // iPad 自身のカメラ起動 ＆ FaceMesh トラッキング
+      // FaceMesh の初期化
       const faceMesh = new FaceMesh({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
       });
@@ -199,52 +199,69 @@
 
       faceMesh.onResults((results) => {
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          const landmarks = results.multiFaceLandmarks[0];
-          drawMesh(landmarks); // iPad自身の画面へ描画
-
-          // PCへメッシュ座標データを送信
-          if (conn && conn.open) {
-            conn.send({ landmarks: landmarks });
-          }
+          drawMesh(results.multiFaceLandmarks[0]);
+        } else {
+          ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
         }
       });
 
-      const camera = new Camera(videoEl, {
-        onFrame: async () => { await faceMesh.send({ image: videoEl }); },
-        width: 1280, height: 720
-      });
-      camera.start();
+      // iPad 自身のカメラ起動
+      navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
+        .then((stream) => {
+          localStream = stream;
+          videoEl.srcObject = stream; // iPadローカル画面にも映す
 
+          // FaceMesh処理ループ
+          const camera = new Camera(videoEl, {
+            onFrame: async () => { await faceMesh.send({ image: videoEl }); },
+            width: 1280, height: 720
+          });
+          camera.start();
+          ipadStatus.innerText = "カメラ起動完了。PCへ接続してください。";
+        })
+        .catch((err) => {
+          ipadStatus.innerText = "カメラ取得エラー: " + err.message;
+        });
+
+      // PCへの接続処理（映像ストリームの送信）
       connectBtn.addEventListener('click', () => {
         const targetId = targetIdInput.value.trim();
-        if (!targetId) return;
+        if (!targetId || !localStream) return;
 
-        ipadStatus.innerText = "接続中...";
-        conn = peer.connect(targetId);
+        ipadStatus.innerText = "PCへ接続・映像ストリーム送信中...";
 
-        conn.on('open', () => {
-          ipadStatus.innerText = "PCに接続完了！データ送信中";
+        // PeerJSの media call でカメラ映像（ストリーム）をPC宛てに発信
+        const call = peer.call(targetId, localStream);
+
+        call.on('stream', () => {
+          ipadStatus.innerText = "PCと接続完了！映像同期中";
         });
-        conn.on('close', () => {
-          ipadStatus.innerText = "切断されました";
+
+        call.on('error', (err) => {
+          ipadStatus.innerText = "接続エラー: " + err.message;
         });
       });
 
     } else {
-      // ---------------- 【 PC モード 】 ----------------
+      // ---------------- 【 PC モード（受信・映像同期側） 】 ----------------
       document.body.className = 'pc-mode';
       const pcIdInput = document.getElementById('pc-id-input');
       const pcStartBtn = document.getElementById('pc-start-btn');
       const pcStatus = document.getElementById('pc-status');
 
-      // PC 自身のカメラ表示（映像のみ起動）
-      navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
-        .then((stream) => {
-          videoEl.srcObject = stream;
-        })
-        .catch((err) => {
-          pcStatus.innerText = "カメラ取得エラー: " + err.message;
-        });
+      // PC側のFaceMesh初期化（受信したiPad映像をリアルタイム解析してメッシュ描画）
+      const faceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+      faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+
+      faceMesh.onResults((results) => {
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          drawMesh(results.multiFaceLandmarks[0]);
+        } else {
+          ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+        }
+      });
 
       let peer = null;
 
@@ -255,21 +272,29 @@
         peer = new Peer(customId);
 
         peer.on('open', (id) => {
-          pcStatus.innerText = `待機中 (ID: ${id})`;
+          pcStatus.innerText = `待機中 (ID: ${id})\niPad側でこのIDを入力してください`;
         });
 
         peer.on('error', (err) => {
           pcStatus.innerText = "エラー: " + err.type;
         });
 
-        // iPadから届いたメッシュデータを画面に描画
-        peer.on('connection', (conn) => {
-          pcStatus.innerText = "iPadと連動中！";
+        // iPadからの映像呼び出し（Media Call）を受信
+        peer.on('call', (call) => {
+          pcStatus.innerText = "iPadからの接続を受信中...";
 
-          conn.on('data', (data) => {
-            if (data.landmarks) {
-              drawMesh(data.landmarks); // iPadの顔トラッキング座標をPC映像上に描画
-            }
+          call.answer(); // 映像受信用に回答
+
+          call.on('stream', (remoteStream) => {
+            pcStatus.innerText = "iPadのカメラ映像と同期完了！";
+            videoEl.srcObject = remoteStream; // PC画面のvideoにiPadの映像を直接割り当てる
+
+            // 受信したリアルタイム映像に対してPC側でもFaceMeshをループ起動
+            const camera = new Camera(videoEl, {
+              onFrame: async () => { await faceMesh.send({ image: videoEl }); },
+              width: 1280, height: 720
+            });
+            camera.start();
           });
         });
       });
