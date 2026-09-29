@@ -1,1 +1,1 @@
-https://pukupukutarou.github.io/ios-windows-html-camera/ここにアクセスするだけ。
+https://pukupukutarou.github.io/ios-windows-html-livecamera/ここにアクセスするだけ。
