@@ -2,61 +2,231 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser VTuber Avatar</title>
+  
+  <!-- MediaPipe Face Landmarker ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
   <style>
-    /* 背景を完全透明に設定 */
-    html, body {
+    * {
+      box-sizing: border-box;
+    }
+    body {
       margin: 0;
       padding: 0;
       width: 100vw;
       height: 100vh;
-      background-color: rgba(0, 0, 0, 0);
+      background-color: #00ff00; /* クロマキー用グリーン（配信ソフト等で透過可能） */
       overflow: hidden;
+      font-family: sans-serif;
+    }
+
+    /* 画面中央のVTuberアバター用コンテナ */
+    #avatar-container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px;
+      height: 400px;
       display: flex;
       justify-content: center;
       align-items: center;
-      user-select: none;
+      z-index: 1;
     }
 
-    /* ウィンドウ移動用エリア */
-    #draggable-area {
+    /* 左下のカメラプレビュー枠（実物確認用） */
+    #camera-container {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      -webkit-app-region: drag;
+      bottom: 20px;
+      left: 20px;
+      width: 160px;
+      height: 120px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 3px solid rgba(255, 255, 255, 0.8);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      background-color: #000;
       z-index: 10;
     }
 
-    /* ビデオ枠（透明度確認用の角丸） */
-    video {
+    #webcam {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transform: scaleX(-1); /* 鏡合わせ表示 */
+    }
+
+    /* UIオーバーレイ */
+    #status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      padding: 6px 12px;
       border-radius: 20px;
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-      pointer-events: none;
+      font-size: 12px;
+      z-index: 20;
+    }
+
+    /* アバター描画用SVG */
+    svg {
+      width: 100%;
+      height: 100%;
     }
   </style>
 </head>
 <body>
-  <div id="draggable-area"></div>
-  <video id="webcam" autoplay playsinline muted></video>
+
+  <div id="status">カメラ起動中...</div>
+
+  <!-- 中央のVTuberアバター（SVGグラフィック） -->
+  <div id="avatar-container">
+    <svg viewBox="0 0 200 200" id="avatar-svg">
+      <!-- 髪（後） -->
+      <path d="M 40,100 Q 100,20 160,100 L 170,160 L 30,160 Z" fill="#6c5ce7" />
+      
+      <!-- 輪郭 -->
+      <path d="M 50,70 Q 100,160 150,70 Q 150,40 100,35 Q 50,40 50,70 Z" fill="#ffeaa7" />
+      
+      <!-- 髪（前・前髪） -->
+      <path d="M 45,65 Q 100,85 155,65 Q 140,30 100,30 Q 60,30 45,65 Z" fill="#a29bfe" />
+
+      <!-- 左目 -->
+      <g id="left-eye">
+        <ellipse cx="75" cy="80" rx="10" ry="12" fill="#2d3436" />
+        <ellipse id="left-pupil" cx="75" cy="80" rx="4" ry="5" fill="#00cec9" />
+        <circle cx="72" cy="76" r="2.5" fill="#ffffff" />
+      </g>
+
+      <!-- 右目 -->
+      <g id="right-eye">
+        <ellipse cx="125" cy="80" rx="10" ry="12" fill="#2d3436" />
+        <ellipse id="right-pupil" cx="125" cy="80" rx="4" ry="5" fill="#00cec9" />
+        <circle cx="122" cy="76" r="2.5" fill="#ffffff" />
+      </g>
+
+      <!-- 眉毛 -->
+      <path d="M 65,65 Q 75,60 85,65" stroke="#2d3436" stroke-width="2.5" fill="none" stroke-linecap="round" />
+      <path d="M 115,65 Q 125,60 135,65" stroke="#2d3436" stroke-width="2.5" fill="none" stroke-linecap="round" />
+
+      <!-- 口（ランドマークでリアルタイムに変形） -->
+      <path id="mouth" d="M 85,115 Q 100,120 115,115 Q 100,120 85,115 Z" fill="#ff7675" stroke="#d63031" stroke-width="1.5" />
+      
+      <!-- ほっぺ（チーク） -->
+      <circle cx="65" cy="98" r="6" fill="#ff7675" opacity="0.4" />
+      <circle cx="135" cy="98" r="6" fill="#ff7675" opacity="0.4" />
+    </svg>
+  </div>
+
+  <!-- 左下の実写カメラ枠 -->
+  <div id="camera-container">
+    <video id="webcam" playsinline muted></video>
+  </div>
 
   <script>
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
-        });
-        document.getElementById('webcam').srcObject = stream;
-      } catch (err) {
-        console.error("カメラ取得エラー:", err);
-      }
+    const videoElement = document.getElementById('webcam');
+    const statusEl = document.getElementById('status');
+    const mouthPath = document.getElementById('mouth');
+    const leftEye = document.getElementById('left-eye');
+    const rightEye = document.getElementById('right-eye');
+
+    // 距離計算関数
+    function distance(p1, p2) {
+      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
     }
 
-    window.addEventListener('DOMContentLoaded', startCamera);
+    // MediaPipe FaceMesh のセットアップ
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    // 顔認識結果の処理（表情トラッキング）
+    faceMesh.onResults((results) => {
+      if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+        statusEl.innerText = "顔を認識できません";
+        return;
+      }
+      statusEl.innerText = "トラッキング中";
+
+      const landmarks = results.multiFaceLandmarks[0];
+
+      // --- 1. 口の開閉度（縦横の距離比率） ---
+      const topLip = landmarks[13];
+      const bottomLip = landmarks[14];
+      const leftCorner = landmarks[61];
+      const rightCorner = landmarks[291];
+
+      const mouthHeight = distance(topLip, bottomLip);
+      const mouthWidth = distance(leftCorner, rightCorner);
+      const mouthOpenRatio = mouthHeight / mouthWidth;
+
+      // 口のパターン制御 (あ・い・う・え・お 簡易シミュレーション)
+      if (mouthOpenRatio > 0.35) {
+        // 大きく口を開ける ("あ" / "お")
+        mouthPath.setAttribute('d', 'M 85,115 Q 100,140 115,115 Q 100,100 85,115 Z');
+      } else if (mouthOpenRatio > 0.18) {
+        // 半開き ("え")
+        mouthPath.setAttribute('d', 'M 85,115 Q 100,128 115,115 Q 100,110 85,115 Z');
+      } else {
+        // 閉じ口
+        mouthPath.setAttribute('d', 'M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z');
+      }
+
+      // --- 2. 目のまばたき判定 ---
+      // 左目
+      const leftEyeTop = landmarks[159];
+      const leftEyeBottom = landmarks[145];
+      const leftEyeLeft = landmarks[33];
+      const leftEyeRight = landmarks[133];
+      const leftEAR = distance(leftEyeTop, leftEyeBottom) / distance(leftEyeLeft, leftEyeRight);
+
+      // 右目
+      const rightEyeTop = landmarks[386];
+      const rightEyeBottom = landmarks[374];
+      const rightEyeLeft = landmarks[362];
+      const rightEyeRight = landmarks[263];
+      const rightEAR = distance(rightEyeTop, rightEyeBottom) / distance(rightEyeLeft, rightEyeRight);
+
+      // まばたき描画の切り替え（0.18未満で目を閉じる）
+      if (leftEAR < 0.18) {
+        leftEye.style.transformOrigin = '75px 80px';
+        leftEye.style.transform = 'scaleY(0.1)';
+      } else {
+        leftEye.style.transform = 'scaleY(1)';
+      }
+
+      if (rightEAR < 0.18) {
+        rightEye.style.transformOrigin = '125px 80px';
+        rightEye.style.transform = 'scaleY(0.1)';
+      } else {
+        rightEye.style.transform = 'scaleY(1)';
+      }
+    });
+
+    // カメラの起動
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start().catch(err => {
+      statusEl.innerText = "カメラエラー: " + err.message;
+      console.error(err);
+    });
   </script>
 </body>
 </html>
