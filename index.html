@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VTuber Single Page App</title>
   
-  <!-- PeerJS (WebRTC通信) -->
+  <!-- PeerJS -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <!-- MediaPipe FaceMesh (iPad用トラッキング) -->
+  <!-- MediaPipe FaceMesh -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
@@ -20,7 +20,7 @@
       overflow: hidden;
     }
 
-    /* ---------------- PC表示（デフォルト） ---------------- */
+    /* ---------------- PC表示 ---------------- */
     body.pc-mode {
       background-color: #00ff00; /* クロマキー用グリーン */
       display: flex; justify-content: center; align-items: center;
@@ -28,19 +28,17 @@
 
     #info-panel {
       position: absolute; top: 10px; left: 10px;
-      background: rgba(0,0,0,0.8); color: white;
-      padding: 12px 16px; border-radius: 8px; font-size: 14px;
+      background: rgba(0,0,0,0.85); color: white;
+      padding: 15px; border-radius: 10px; font-size: 14px;
       z-index: 100;
     }
-    #my-id { font-weight: bold; color: #a6e3a1; font-size: 18px; user-select: all; }
 
     #avatar-container { width: 400px; height: 400px; }
     #avatar-svg { width: 100%; height: 100%; }
 
     /* ---------------- iPad表示 ---------------- */
     body.ipad-mode {
-      background-color: #1e1e2e;
-      color: #cdd6f4;
+      background-color: #1e1e2e; color: #cdd6f4;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       padding: 20px; text-align: center;
@@ -54,7 +52,7 @@
     #status { font-size: 18px; margin-bottom: 20px; font-weight: bold; }
     input {
       padding: 12px; font-size: 18px; border-radius: 8px;
-      border: 1px solid #45475a; width: 220px; text-align: center; margin-bottom: 15px;
+      border: 1px solid #45475a; width: 220px; text-align: center; margin-bottom: 12px;
     }
     button {
       padding: 12px 24px; font-size: 18px; border-radius: 8px;
@@ -66,10 +64,18 @@
 </head>
 <body class="pc-mode">
 
-  <!-- PC画面用: ID案内パネル -->
+  <!-- PC画面用: ID設定・案内パネル -->
   <div id="info-panel">
-    接続ID: <span id="my-id">発行中...</span><br>
-    <small>※iPadでこのページの末尾に <b>?role=ipad</b> を付けて開き、上記IDを入力してください</small>
+    <div id="pc-setup">
+      <b>好きなIDを決めてください</b><br>
+      <small>（例: 1234 や myroom など）</small><br><br>
+      <input type="text" id="my-custom-id" placeholder="合言葉IDを入力" value="1234"><br>
+      <button id="set-id-btn">このIDで待機する</button>
+    </div>
+    <div id="pc-waiting" style="display: none;">
+      接続ID: <b id="current-id" style="color:#a6e3a1; font-size: 18px;"></b><br>
+      <small id="pc-status">※iPadで ?role=ipad を開き、このIDを入力してください</small>
+    </div>
   </div>
 
   <!-- PC画面用: アバターSVG -->
@@ -103,25 +109,23 @@
 
   <!-- iPad画面用 UI -->
   <div class="ipad-ui">
-    <div id="status">初期化中...</div>
-    <input type="text" id="pc-id" placeholder="PC側のIDを入力">
+    <div id="status">PC側のIDを入力してください</div>
+    <input type="text" id="pc-id" placeholder="PC側のIDを入力" value="1234">
     <button id="connect-btn">PCに接続して配信開始</button>
   </div>
 
-  <!-- カメラ要素（非表示） -->
   <video id="webcam" playsinline muted></video>
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const isIpad = urlParams.get('role') === 'ipad';
 
-    // 距離計算関数
     function distance(p1, p2) {
       return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
     }
 
     if (isIpad) {
-      // ---------------- 【 iPad 側の処理 】 ----------------
+      // ---------------- iPad 側 ----------------
       document.body.className = 'ipad-mode';
 
       const statusEl = document.getElementById('status');
@@ -132,10 +136,6 @@
       const peer = new Peer();
       let conn = null;
 
-      peer.on('open', () => {
-        statusEl.innerText = "準備完了：PC画面のIDを入力してください";
-      });
-
       connectBtn.addEventListener('click', () => {
         const targetId = pcIdInput.value.trim();
         if (!targetId) return alert('PC側のIDを入力してください');
@@ -144,12 +144,16 @@
         conn = peer.connect(targetId);
 
         conn.on('open', () => {
-          statusEl.innerText = "PCに接続しました！カメラの表情を送信中...";
+          statusEl.innerText = "PCに接続しました！表情トラッキング中...";
           startCameraTracking();
         });
 
         conn.on('close', () => {
-          statusEl.innerText = "切断されました。再読み込みしてください。";
+          statusEl.innerText = "切断されました。再接続してください。";
+        });
+
+        conn.on('error', (err) => {
+          statusEl.innerText = "接続エラー: IDが間違っているか、PCが待機していません";
         });
       });
 
@@ -165,16 +169,13 @@
 
           const landmarks = results.multiFaceLandmarks[0];
 
-          // 口の計算
           const mouthHeight = distance(landmarks[13], landmarks[14]);
           const mouthWidth = distance(landmarks[61], landmarks[291]);
           const mouthRatio = mouthHeight / mouthWidth;
 
-          // 目の計算
           const leftEAR = distance(landmarks[159], landmarks[145]) / distance(landmarks[33], landmarks[133]);
           const rightEAR = distance(landmarks[386], landmarks[374]) / distance(landmarks[362], landmarks[263]);
 
-          // 数値データのみを送信（映像は送らない）
           conn.send({
             mouthRatio: mouthRatio,
             leftEyeClosed: leftEAR < 0.18,
@@ -186,45 +187,65 @@
           onFrame: async () => { await faceMesh.send({ image: videoElement }); },
           width: 640, height: 480
         });
-        camera.start().catch(err => {
-          statusEl.innerText = "カメラ起動エラー: " + err.message;
-        });
+        camera.start();
       }
 
     } else {
-      // ---------------- 【 PC 側の処理 】 ----------------
+      // ---------------- PC 側 ----------------
       document.body.className = 'pc-mode';
 
-      const myIdEl = document.getElementById('my-id');
+      const customIdInput = document.getElementById('my-custom-id');
+      const setIdBtn = document.getElementById('set-id-btn');
+      const pcSetup = document.getElementById('pc-setup');
+      const pcWaiting = document.getElementById('pc-waiting');
+      const currentIdEl = document.getElementById('current-id');
+      const pcStatus = document.getElementById('pc-status');
+
       const mouthPath = document.getElementById('mouth');
       const leftEye = document.getElementById('left-eye');
       const rightEye = document.getElementById('right-eye');
 
-      const peer = new Peer();
+      let peer = null;
 
-      peer.on('open', (id) => {
-        myIdEl.innerText = id;
-      });
+      setIdBtn.addEventListener('click', () => {
+        const customId = customIdInput.value.trim();
+        if (!customId) return alert('IDを入力してください');
 
-      peer.on('connection', (conn) => {
-        myIdEl.innerText = "iPadと接続完了！";
+        // 指定したIDでPeerオブジェクトを作成
+        peer = new Peer(customId);
 
-        conn.on('data', (data) => {
-          // 口の変形
-          if (data.mouthRatio > 0.35) {
-            mouthPath.setAttribute('d', 'M 85,115 Q 100,140 115,115 Q 100,100 85,115 Z');
-          } else if (data.mouthRatio > 0.18) {
-            mouthPath.setAttribute('d', 'M 85,115 Q 100,128 115,115 Q 100,110 85,115 Z');
+        peer.on('open', (id) => {
+          pcSetup.style.display = 'none';
+          pcWaiting.style.display = 'block';
+          currentIdEl.innerText = id;
+        });
+
+        peer.on('error', (err) => {
+          if (err.type === 'unavailable-id') {
+            alert('そのIDは既に使用されています。別のID（例: ' + customId + '99）にしてください。');
           } else {
-            mouthPath.setAttribute('d', 'M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z');
+            alert('エラーが発生しました: ' + err.message);
           }
+        });
 
-          // 目のまばたき
-          leftEye.style.transform = data.leftEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
-          leftEye.style.transformOrigin = '75px 80px';
+        peer.on('connection', (conn) => {
+          pcStatus.innerText = "iPadと接続完了！連動中...";
 
-          rightEye.style.transform = data.rightEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
-          rightEye.style.transformOrigin = '125px 80px';
+          conn.on('data', (data) => {
+            if (data.mouthRatio > 0.35) {
+              mouthPath.setAttribute('d', 'M 85,115 Q 100,140 115,115 Q 100,100 85,115 Z');
+            } else if (data.mouthRatio > 0.18) {
+              mouthPath.setAttribute('d', 'M 85,115 Q 100,128 115,115 Q 100,110 85,115 Z');
+            } else {
+              mouthPath.setAttribute('d', 'M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z');
+            }
+
+            leftEye.style.transform = data.leftEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
+            leftEye.style.transformOrigin = '75px 80px';
+
+            rightEye.style.transform = data.rightEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
+            rightEye.style.transformOrigin = '125px 80px';
+          });
         });
       });
     }
