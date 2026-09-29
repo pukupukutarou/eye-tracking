@@ -1,304 +1,1560 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>iPad WebCamera System</title>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 
-  <!-- PeerJS -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <!-- MediaPipe FaceMesh & Camera Utils -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<title>iPad → Windows Camera WebRTC</title>
 
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 0;
-      width: 100vw; height: 100vh;
-      background-color: #000;
-      color: #fff;
-      font-family: sans-serif;
-      overflow: hidden;
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #080808;
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    overflow: auto;
+}
+
+.app {
+    width: min(900px, 100%);
+    padding: 20px;
+}
+
+h1 {
+    margin: 0 0 6px;
+    font-size: 25px;
+}
+
+.subtitle {
+    color: #999;
+    margin-bottom: 20px;
+}
+
+.panel {
+    background: #151515;
+    border: 1px solid #292929;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    color: #aaa;
+    font-size: 13px;
+    margin-bottom: 7px;
+}
+
+select,
+input,
+textarea,
+button {
+    font: inherit;
+}
+
+select,
+input,
+textarea {
+    width: 100%;
+    background: #0c0c0c;
+    color: white;
+    border: 1px solid #383838;
+    border-radius: 10px;
+    padding: 12px;
+    outline: none;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    border-color: #777;
+}
+
+.pin {
+    font-size: 28px;
+    text-align: center;
+    letter-spacing: 10px;
+    font-weight: bold;
+}
+
+button {
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 16px;
+    background: #2d7cff;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    margin-top: 10px;
+}
+
+button:hover {
+    background: #4a8fff;
+}
+
+button.secondary {
+    background: #292929;
+}
+
+button.danger {
+    background: #a92d2d;
+}
+
+button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.row > * {
+    flex: 1;
+}
+
+textarea {
+    min-height: 150px;
+    resize: vertical;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+.status {
+    padding: 12px;
+    border-radius: 10px;
+    background: #101010;
+    color: #aaa;
+    margin-top: 12px;
+    word-break: break-word;
+}
+
+.status.ok {
+    color: #70e090;
+}
+
+.status.error {
+    color: #ff7777;
+}
+
+.videoBox {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: black;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #292929;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: black;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.small {
+    font-size: 12px;
+    color: #888;
+    line-height: 1.6;
+}
+
+.step {
+    color: #ddd;
+    margin-bottom: 8px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #292929;
+    color: #bbb;
+    font-size: 12px;
+}
+
+.cameraControls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cameraControls button {
+    flex: 1;
+    min-width: 130px;
+}
+
+@media (max-width: 600px) {
+    .app {
+        padding: 12px;
     }
 
-    /* 映像＋Canvas表示エリア */
-    #container {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
+    h1 {
+        font-size: 21px;
     }
 
-    video, canvas {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
+    .panel {
+        padding: 14px;
     }
 
-    /* ミラー（左右反転）制御クラス */
-    .mirror {
-      transform: scaleX(-1);
+    .pin {
+        font-size: 24px;
     }
-
-    /* UI パネル */
-    #ui-panel {
-      position: absolute;
-      top: 15px;
-      left: 15px;
-      background: rgba(0, 0, 0, 0.8);
-      padding: 15px;
-      border-radius: 10px;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-width: 320px;
-      border: 1px solid #333;
-    }
-
-    input, button {
-      padding: 10px;
-      font-size: 14px;
-      border-radius: 6px;
-      border: 1px solid #555;
-    }
-
-    input {
-      background: #222;
-      color: #fff;
-      text-align: center;
-    }
-
-    button {
-      background: #4a90e2;
-      color: #fff;
-      border: none;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #357abd;
-    }
-
-    .ipad-ui { display: none; }
-    body.ipad-mode .ipad-ui { display: flex; flex-direction: column; gap: 10px; }
-    body.ipad-mode .pc-ui { display: none; }
-  </style>
+}
+</style>
 </head>
-<body class="pc-mode">
 
-  <div id="container">
-    <!-- iPadのカメラストリームを再生するvideo要素 -->
-    <video id="webcam" playsinline autoplay muted class="mirror"></video>
-    <!-- FaceMesh（オーバーレイ描画用） -->
-    <canvas id="mesh-canvas" class="mirror"></canvas>
-  </div>
+<body>
 
-  <div id="ui-panel">
-    <!-- PC用 UI -->
-    <div class="pc-ui">
-      <div><b>PC モード（受信側）</b></div>
-      <div>ID: <input type="text" id="pc-id-input" value="1234"></div>
-      <button id="pc-start-btn">このIDで待機する</button>
-      <div id="pc-status">IDを決めて「待機する」を押してください</div>
+<div class="app">
+
+    <h1>📷 WebRTC Camera Link</h1>
+    <div class="subtitle">
+        iPad ⇄ Windows / 1 HTML
     </div>
 
-    <!-- iPad用 UI -->
-    <div class="ipad-ui">
-      <div><b>iPad モード（カメラ送信側）</b></div>
-      <input type="text" id="target-id-input" placeholder="PCのIDを入力" value="1234">
-      <button id="connect-btn">PCに接続してカメラ送信</button>
-      <div id="ipad-status">PCのIDを入力してください</div>
+    <!-- ROLE -->
+    <div class="panel">
+
+        <label>この端末の役割</label>
+
+        <select id="role">
+            <option value="sender">iPad / カメラ送信</option>
+            <option value="receiver">Windows / 映像受信</option>
+        </select>
+
+        <br><br>
+
+        <label>4桁PIN</label>
+
+        <input
+            id="pin"
+            class="pin"
+            type="password"
+            inputmode="numeric"
+            maxlength="4"
+            pattern="[0-9]{4}"
+            placeholder="0000"
+        >
+
+        <button id="startBtn">
+            開始
+        </button>
+
+        <div id="status" class="status">
+            待機中
+        </div>
+
     </div>
 
-    <!-- 共通設定: ミラー反転スイッチ -->
-    <button id="toggle-mirror-btn">ミラー反転 (ON/OFF)</button>
-  </div>
 
-  <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    const isIpad = urlParams.get('role') === 'ipad';
+    <!-- SENDER -->
+    <div id="senderPanel" class="panel hidden">
 
-    const videoEl = document.getElementById('webcam');
-    const canvasEl = document.getElementById('mesh-canvas');
-    const ctx = canvasEl.getContext('2d');
-    const toggleMirrorBtn = document.getElementById('toggle-mirror-btn');
+        <h2>📱 iPad カメラ</h2>
 
-    let isMirrored = true;
+        <div class="videoBox">
+            <video
+                id="localVideo"
+                autoplay
+                muted
+                playsinline>
+            </video>
+        </div>
 
-    // ミラー設定（左右反転）の切り替え
-    toggleMirrorBtn.addEventListener('click', () => {
-      isMirrored = !isMirrored;
-      if (isMirrored) {
-        videoEl.classList.add('mirror');
-        canvasEl.classList.add('mirror');
-      } else {
-        videoEl.classList.remove('mirror');
-        canvasEl.classList.remove('mirror');
-      }
-    });
+        <div class="cameraControls">
 
-    // Canvasサイズの同期
-    function resizeCanvas() {
-      canvasEl.width = videoEl.videoWidth || window.innerWidth;
-      canvasEl.height = videoEl.videoHeight || window.innerHeight;
-    }
-    videoEl.addEventListener('loadedmetadata', resizeCanvas);
-    window.addEventListener('resize', resizeCanvas);
+            <button id="cameraBtn">
+                カメラ開始
+            </button>
 
-    // FaceMesh メッシュ描画関数
-    function drawMesh(landmarks) {
-      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-      if (!landmarks) return;
+            <button id="switchCameraBtn" class="secondary">
+                カメラ切替
+            </button>
 
-      const w = canvasEl.width;
-      const h = canvasEl.height;
+        </div>
 
-      ctx.strokeStyle = '#00ffcc';
-      ctx.lineWidth = 1;
+        <br>
 
-      if (typeof FACEMESH_TESSELATION !== 'undefined') {
-        for (const i of FACEMESH_TESSELATION) {
-          const p1 = landmarks[i[0]];
-          const p2 = landmarks[i[1]];
-          ctx.beginPath();
-          ctx.moveTo(p1.x * w, p1.y * h);
-          ctx.lineTo(p2.x * w, p2.y * h);
-          ctx.stroke();
+        <div class="step">
+            ① 「Offerを作成」
+        </div>
+
+        <button id="createOfferBtn">
+            Offerを作成
+        </button>
+
+        <br><br>
+
+        <div class="step">
+            ② 下のOfferをWindowsへコピー
+        </div>
+
+        <textarea
+            id="offerOutput"
+            readonly
+            placeholder="Offerがここに表示されます">
+        </textarea>
+
+        <button id="copyOfferBtn" class="secondary">
+            Offerをコピー
+        </button>
+
+        <br><br>
+
+        <div class="step">
+            ③ Windowsから受け取ったAnswerを貼り付け
+        </div>
+
+        <textarea
+            id="answerInput"
+            placeholder="Windows側のAnswerをここへ貼り付け">
+        </textarea>
+
+        <button id="applyAnswerBtn">
+            Answerを適用
+        </button>
+
+    </div>
+
+
+    <!-- RECEIVER -->
+    <div id="receiverPanel" class="panel hidden">
+
+        <h2>🖥️ Windows 受信</h2>
+
+        <div class="videoBox">
+            <video
+                id="remoteVideo"
+                autoplay
+                playsinline
+                controls>
+            </video>
+        </div>
+
+        <br>
+
+        <div class="step">
+            ① iPadから受け取ったOfferを貼り付け
+        </div>
+
+        <textarea
+            id="offerInput"
+            placeholder="iPad側のOfferをここへ貼り付け">
+        </textarea>
+
+        <button id="createAnswerBtn">
+            Answerを作成
+        </button>
+
+        <br><br>
+
+        <div class="step">
+            ② AnswerをiPadへコピー
+        </div>
+
+        <textarea
+            id="answerOutput"
+            readonly
+            placeholder="Answerがここに表示されます">
+        </textarea>
+
+        <button id="copyAnswerBtn" class="secondary">
+            Answerをコピー
+        </button>
+
+    </div>
+
+
+    <!-- INFO -->
+    <div class="panel">
+
+        <span class="badge">WebRTC</span>
+        <span class="badge">STUN</span>
+        <span class="badge">4-digit PIN</span>
+
+        <p class="small">
+            カメラ映像はWebRTCのP2P接続で送信します。
+            Offer / Answerの交換は手動で行います。
+        </p>
+
+        <button id="resetBtn" class="danger">
+            接続をリセット
+        </button>
+
+    </div>
+
+</div>
+
+
+<script>
+
+"use strict";
+
+/* =========================================================
+   GLOBAL
+========================================================= */
+
+let pc = null;
+let localStream = null;
+
+let currentCamera = "environment";
+
+let localPin = "";
+
+const ICE_SERVERS = {
+
+    iceServers: [
+
+        {
+            urls: [
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302"
+            ]
         }
-      } else {
-        ctx.fillStyle = '#00ffcc';
-        for (const p of landmarks) {
-          ctx.beginPath();
-          ctx.arc(p.x * w, p.y * h, 1.5, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      }
+
+    ]
+
+};
+
+
+/* =========================================================
+   ELEMENTS
+========================================================= */
+
+const role =
+    document.getElementById("role");
+
+const pin =
+    document.getElementById("pin");
+
+const startBtn =
+    document.getElementById("startBtn");
+
+const statusBox =
+    document.getElementById("status");
+
+const senderPanel =
+    document.getElementById("senderPanel");
+
+const receiverPanel =
+    document.getElementById("receiverPanel");
+
+const localVideo =
+    document.getElementById("localVideo");
+
+const remoteVideo =
+    document.getElementById("remoteVideo");
+
+const cameraBtn =
+    document.getElementById("cameraBtn");
+
+const switchCameraBtn =
+    document.getElementById("switchCameraBtn");
+
+const createOfferBtn =
+    document.getElementById("createOfferBtn");
+
+const offerOutput =
+    document.getElementById("offerOutput");
+
+const answerInput =
+    document.getElementById("answerInput");
+
+const applyAnswerBtn =
+    document.getElementById("applyAnswerBtn");
+
+const offerInput =
+    document.getElementById("offerInput");
+
+const createAnswerBtn =
+    document.getElementById("createAnswerBtn");
+
+const answerOutput =
+    document.getElementById("answerOutput");
+
+const copyOfferBtn =
+    document.getElementById("copyOfferBtn");
+
+const copyAnswerBtn =
+    document.getElementById("copyAnswerBtn");
+
+const resetBtn =
+    document.getElementById("resetBtn");
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function setStatus(message, type = "") {
+
+    statusBox.textContent = message;
+
+    statusBox.className =
+        "status " + type;
+
+}
+
+
+/* =========================================================
+   PIN
+========================================================= */
+
+function validPin(value) {
+
+    return /^[0-9]{4}$/.test(value);
+
+}
+
+
+/*
+    PINはWebRTCデータチャネルでも確認する。
+
+    注意：
+    これは4桁の簡易ペアリングであり、
+    本格的な暗号認証ではない。
+*/
+
+
+/* =========================================================
+   ROLE
+========================================================= */
+
+role.addEventListener("change", () => {
+
+    const isSender =
+        role.value === "sender";
+
+    senderPanel.classList.toggle(
+        "hidden",
+        !isSender
+    );
+
+    receiverPanel.classList.toggle(
+        "hidden",
+        isSender
+    );
+
+});
+
+
+/* =========================================================
+   START
+========================================================= */
+
+startBtn.addEventListener("click", async () => {
+
+    localPin = pin.value.trim();
+
+    if (!validPin(localPin)) {
+
+        setStatus(
+            "4桁の数字PINを入力してください。",
+            "error"
+        );
+
+        return;
     }
 
-    if (isIpad) {
-      // ---------------- 【 iPad モード（Webカメラ化＋送信） 】 ----------------
-      document.body.className = 'ipad-mode';
-      const targetIdInput = document.getElementById('target-id-input');
-      const connectBtn = document.getElementById('connect-btn');
-      const ipadStatus = document.getElementById('ipad-status');
+    try {
 
-      const peer = new Peer();
-      let localStream = null;
+        createPeerConnection();
 
-      // FaceMesh の初期化
-      const faceMesh = new FaceMesh({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-      });
-      faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+        if (role.value === "sender") {
 
-      faceMesh.onResults((results) => {
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          drawMesh(results.multiFaceLandmarks[0]);
+            senderPanel.classList.remove("hidden");
+            receiverPanel.classList.add("hidden");
+
+            setStatus(
+                "送信モードを開始しました。",
+                "ok"
+            );
+
+            await startCamera();
+
         } else {
-          ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+            senderPanel.classList.add("hidden");
+            receiverPanel.classList.remove("hidden");
+
+            setStatus(
+                "受信モードを開始しました。",
+                "ok"
+            );
+
         }
-      });
 
-      // iPad 自身のカメラ起動
-      navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
-        .then((stream) => {
-          localStream = stream;
-          videoEl.srcObject = stream; // iPadローカル画面にも映す
+        startBtn.disabled = true;
 
-          // FaceMesh処理ループ
-          const camera = new Camera(videoEl, {
-            onFrame: async () => { await faceMesh.send({ image: videoEl }); },
-            width: 1280, height: 720
-          });
-          camera.start();
-          ipadStatus.innerText = "カメラ起動完了。PCへ接続してください。";
-        })
-        .catch((err) => {
-          ipadStatus.innerText = "カメラ取得エラー: " + err.message;
-        });
+    } catch (error) {
 
-      // PCへの接続処理（映像ストリームの送信）
-      connectBtn.addEventListener('click', () => {
-        const targetId = targetIdInput.value.trim();
-        if (!targetId || !localStream) return;
+        console.error(error);
 
-        ipadStatus.innerText = "PCへ接続・映像ストリーム送信中...";
+        setStatus(
+            "開始失敗: " + error.message,
+            "error"
+        );
 
-        // PeerJSの media call でカメラ映像（ストリーム）をPC宛てに発信
-        const call = peer.call(targetId, localStream);
+    }
 
-        call.on('stream', () => {
-          ipadStatus.innerText = "PCと接続完了！映像同期中";
-        });
+});
 
-        call.on('error', (err) => {
-          ipadStatus.innerText = "接続エラー: " + err.message;
-        });
-      });
+
+/* =========================================================
+   PEER CONNECTION
+========================================================= */
+
+function createPeerConnection() {
+
+    if (pc) {
+
+        try {
+            pc.close();
+        } catch (_) {}
+
+    }
+
+    pc = new RTCPeerConnection(
+        ICE_SERVERS
+    );
+
+
+    /*
+        DATA CHANNEL
+
+        PIN確認用
+    */
+
+    if (role.value === "sender") {
+
+        const channel =
+            pc.createDataChannel("auth");
+
+        channel.onopen = () => {
+
+            channel.send(
+                JSON.stringify({
+                    type: "pin",
+                    pin: localPin
+                })
+            );
+
+        };
 
     } else {
-      // ---------------- 【 PC モード（受信・映像同期側） 】 ----------------
-      document.body.className = 'pc-mode';
-      const pcIdInput = document.getElementById('pc-id-input');
-      const pcStartBtn = document.getElementById('pc-start-btn');
-      const pcStatus = document.getElementById('pc-status');
 
-      // PC側のFaceMesh初期化（受信したiPad映像をリアルタイム解析してメッシュ描画）
-      const faceMesh = new FaceMesh({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-      });
-      faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+        pc.ondatachannel = event => {
 
-      faceMesh.onResults((results) => {
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          drawMesh(results.multiFaceLandmarks[0]);
-        } else {
-          ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-        }
-      });
+            const channel =
+                event.channel;
 
-      let peer = null;
+            channel.onmessage = e => {
 
-      pcStartBtn.addEventListener('click', () => {
-        const customId = pcIdInput.value.trim();
-        if (!customId) return;
+                try {
 
-        peer = new Peer(customId);
+                    const data =
+                        JSON.parse(e.data);
 
-        peer.on('open', (id) => {
-          pcStatus.innerText = `待機中 (ID: ${id})\niPad側でこのIDを入力してください`;
-        });
+                    if (
+                        data.type === "pin"
+                    ) {
 
-        peer.on('error', (err) => {
-          pcStatus.innerText = "エラー: " + err.type;
-        });
+                        if (
+                            data.pin === localPin
+                        ) {
 
-        // iPadからの映像呼び出し（Media Call）を受信
-        peer.on('call', (call) => {
-          pcStatus.innerText = "iPadからの接続を受信中...";
+                            setStatus(
+                                "PIN確認OK。接続されています。",
+                                "ok"
+                            );
 
-          call.answer(); // 映像受信用に回答
+                        } else {
 
-          call.on('stream', (remoteStream) => {
-            pcStatus.innerText = "iPadのカメラ映像と同期完了！";
-            videoEl.srcObject = remoteStream; // PC画面のvideoにiPadの映像を直接割り当てる
+                            setStatus(
+                                "PINが一致しません。",
+                                "error"
+                            );
 
-            // 受信したリアルタイム映像に対してPC側でもFaceMeshをループ起動
-            const camera = new Camera(videoEl, {
-              onFrame: async () => { await faceMesh.send({ image: videoEl }); },
-              width: 1280, height: 720
-            });
-            camera.start();
-          });
-        });
-      });
+                            channel.close();
+
+                            if (pc) {
+                                pc.close();
+                            }
+
+                        }
+
+                    }
+
+                } catch (error) {
+
+                    console.error(error);
+
+                }
+
+            };
+
+        };
+
     }
-  </script>
+
+
+    /* =====================================================
+       REMOTE VIDEO
+    ===================================================== */
+
+    pc.ontrack = event => {
+
+        if (
+            event.streams &&
+            event.streams[0]
+        ) {
+
+            remoteVideo.srcObject =
+                event.streams[0];
+
+            remoteVideo.play()
+                .catch(() => {});
+
+        }
+
+    };
+
+
+    /* =====================================================
+       ICE
+    ===================================================== */
+
+    pc.oniceconnectionstatechange = () => {
+
+        console.log(
+            "ICE:",
+            pc.iceConnectionState
+        );
+
+        switch (
+            pc.iceConnectionState
+        ) {
+
+            case "checking":
+
+                setStatus(
+                    "WebRTC接続を確認中..."
+                );
+
+                break;
+
+            case "connected":
+
+                setStatus(
+                    "WebRTC接続成功。",
+                    "ok"
+                );
+
+                break;
+
+            case "completed":
+
+                setStatus(
+                    "WebRTC接続完了。",
+                    "ok"
+                );
+
+                break;
+
+            case "disconnected":
+
+                setStatus(
+                    "接続が切断されました。",
+                    "error"
+                );
+
+                break;
+
+            case "failed":
+
+                setStatus(
+                    "WebRTC接続失敗。",
+                    "error"
+                );
+
+                break;
+
+            case "closed":
+
+                setStatus(
+                    "接続終了。"
+                );
+
+                break;
+
+        }
+
+    };
+
+
+    pc.onconnectionstatechange = () => {
+
+        console.log(
+            "Connection:",
+            pc.connectionState
+        );
+
+    };
+
+}
+
+
+/* =========================================================
+   CAMERA
+========================================================= */
+
+cameraBtn.addEventListener(
+    "click",
+    startCamera
+);
+
+
+async function startCamera() {
+
+    if (
+        !navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia
+    ) {
+
+        setStatus(
+            "このブラウザではカメラAPIが使用できません。HTTPSで開いてください。",
+            "error"
+        );
+
+        return;
+
+    }
+
+
+    try {
+
+        if (localStream) {
+
+            localStream
+                .getTracks()
+                .forEach(track =>
+                    track.stop()
+                );
+
+        }
+
+
+        localStream =
+            await navigator.mediaDevices.getUserMedia({
+
+                video: {
+
+                    facingMode:
+                        currentCamera,
+
+                    width: {
+                        ideal: 1920
+                    },
+
+                    height: {
+                        ideal: 1080
+                    },
+
+                    frameRate: {
+                        ideal: 30,
+                        max: 60
+                    }
+
+                },
+
+                audio: false
+
+            });
+
+
+        localVideo.srcObject =
+            localStream;
+
+
+        localVideo.play()
+            .catch(() => {});
+
+
+        /*
+            PeerConnectionへ追加
+        */
+
+        if (pc) {
+
+            const senders =
+                pc.getSenders();
+
+            for (
+                const track
+                of localStream.getTracks()
+            ) {
+
+                const existing =
+                    senders.find(
+                        s =>
+                            s.track &&
+                            s.track.kind ===
+                            track.kind
+                    );
+
+                if (existing) {
+
+                    await existing.replaceTrack(
+                        track
+                    );
+
+                } else {
+
+                    pc.addTrack(
+                        track,
+                        localStream
+                    );
+
+                }
+
+            }
+
+        }
+
+
+        cameraBtn.textContent =
+            "カメラ再起動";
+
+
+        setStatus(
+            "カメラ起動完了。",
+            "ok"
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "カメラ起動失敗: " +
+            error.message,
+            "error"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   SWITCH CAMERA
+========================================================= */
+
+switchCameraBtn.addEventListener(
+    "click",
+    async () => {
+
+        currentCamera =
+            currentCamera === "environment"
+                ? "user"
+                : "environment";
+
+        await startCamera();
+
+    }
+);
+
+
+/* =========================================================
+   CREATE OFFER
+========================================================= */
+
+createOfferBtn.addEventListener(
+    "click",
+    async () => {
+
+        if (!pc) {
+
+            setStatus(
+                "先に開始してください。",
+                "error"
+            );
+
+            return;
+
+        }
+
+
+        try {
+
+            setStatus(
+                "Offerを作成中..."
+            );
+
+
+            const offer =
+                await pc.createOffer({
+
+                    offerToReceiveAudio:
+                        false,
+
+                    offerToReceiveVideo:
+                        false
+
+                });
+
+
+            await pc.setLocalDescription(
+                offer
+            );
+
+
+            await waitForIceGathering();
+
+
+            const description =
+                pc.localDescription;
+
+
+            const packet = {
+
+                version: 1,
+
+                type: "webrtc-offer",
+
+                pin: localPin,
+
+                sdp:
+                    description.sdp
+
+            };
+
+
+            offerOutput.value =
+                btoa(
+                    unescape(
+                        encodeURIComponent(
+                            JSON.stringify(
+                                packet
+                            )
+                        )
+                    )
+                );
+
+
+            setStatus(
+                "Offer作成完了。Windowsへコピーしてください。",
+                "ok"
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            setStatus(
+                "Offer作成失敗: " +
+                error.message,
+                "error"
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   APPLY ANSWER
+========================================================= */
+
+applyAnswerBtn.addEventListener(
+    "click",
+    async () => {
+
+        if (!pc) {
+
+            setStatus(
+                "先に開始してください。",
+                "error"
+            );
+
+            return;
+
+        }
+
+
+        try {
+
+            const packet =
+                decodePacket(
+                    answerInput.value
+                );
+
+
+            if (
+                packet.type !==
+                "webrtc-answer"
+            ) {
+
+                throw new Error(
+                    "Answerではありません。"
+                );
+
+            }
+
+
+            if (
+                packet.pin !==
+                localPin
+            ) {
+
+                throw new Error(
+                    "PINが一致しません。"
+                );
+
+            }
+
+
+            await pc.setRemoteDescription({
+
+                type: "answer",
+
+                sdp: packet.sdp
+
+            });
+
+
+            setStatus(
+                "Answer適用完了。接続中...",
+                "ok"
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            setStatus(
+                "Answer適用失敗: " +
+                error.message,
+                "error"
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   CREATE ANSWER
+========================================================= */
+
+createAnswerBtn.addEventListener(
+    "click",
+    async () => {
+
+        if (!pc) {
+
+            setStatus(
+                "先に開始してください。",
+                "error"
+            );
+
+            return;
+
+        }
+
+
+        try {
+
+            const packet =
+                decodePacket(
+                    offerInput.value
+                );
+
+
+            if (
+                packet.type !==
+                "webrtc-offer"
+            ) {
+
+                throw new Error(
+                    "Offerではありません。"
+                );
+
+            }
+
+
+            if (
+                packet.pin !==
+                localPin
+            ) {
+
+                throw new Error(
+                    "PINが一致しません。"
+                );
+
+            }
+
+
+            await pc.setRemoteDescription({
+
+                type: "offer",
+
+                sdp: packet.sdp
+
+            });
+
+
+            const answer =
+                await pc.createAnswer();
+
+
+            await pc.setLocalDescription(
+                answer
+            );
+
+
+            await waitForIceGathering();
+
+
+            const description =
+                pc.localDescription;
+
+
+            const response = {
+
+                version: 1,
+
+                type: "webrtc-answer",
+
+                pin: localPin,
+
+                sdp:
+                    description.sdp
+
+            };
+
+
+            answerOutput.value =
+                encodePacket(
+                    response
+                );
+
+
+            setStatus(
+                "Answer作成完了。iPadへコピーしてください。",
+                "ok"
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            setStatus(
+                "Answer作成失敗: " +
+                error.message,
+                "error"
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   ICE WAIT
+========================================================= */
+
+function waitForIceGathering() {
+
+    return new Promise(resolve => {
+
+        if (
+            !pc ||
+            pc.iceGatheringState ===
+            "complete"
+        ) {
+
+            resolve();
+
+            return;
+
+        }
+
+
+        const timeout =
+            setTimeout(
+                resolve,
+                10000
+            );
+
+
+        const check = () => {
+
+            if (
+                pc.iceGatheringState ===
+                "complete"
+            ) {
+
+                clearTimeout(timeout);
+
+                pc.removeEventListener(
+                    "icegatheringstatechange",
+                    check
+                );
+
+                resolve();
+
+            }
+
+        };
+
+
+        pc.addEventListener(
+            "icegatheringstatechange",
+            check
+        );
+
+    });
+
+}
+
+
+/* =========================================================
+   ENCODE / DECODE
+========================================================= */
+
+function encodePacket(object) {
+
+    const json =
+        JSON.stringify(object);
+
+    return btoa(
+        unescape(
+            encodeURIComponent(
+                json
+            )
+        )
+    );
+
+}
+
+
+function decodePacket(text) {
+
+    const clean =
+        text.trim();
+
+    if (!clean) {
+
+        throw new Error(
+            "データが空です。"
+        );
+
+    }
+
+
+    try {
+
+        const json =
+            decodeURIComponent(
+                escape(
+                    atob(clean)
+                )
+            );
+
+
+        return JSON.parse(json);
+
+    } catch (error) {
+
+        throw new Error(
+            "接続コードを正しく貼り付けてください。"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   COPY
+========================================================= */
+
+async function copyText(text) {
+
+    if (!text) {
+
+        setStatus(
+            "コピーするデータがありません。",
+            "error"
+        );
+
+        return;
+
+    }
+
+
+    try {
+
+        await navigator.clipboard.writeText(
+            text
+        );
+
+
+        setStatus(
+            "コピーしました。",
+            "ok"
+        );
+
+    } catch (error) {
+
+        /*
+            iPadなどでClipboard APIが
+           使えない場合
+        */
+
+        const temp =
+            document.createElement("textarea");
+
+        temp.value = text;
+
+        document.body.appendChild(temp);
+
+        temp.select();
+
+        document.execCommand(
+            "copy"
+        );
+
+        temp.remove();
+
+
+        setStatus(
+            "コピーしました。",
+            "ok"
+        );
+
+    }
+
+}
+
+
+copyOfferBtn.addEventListener(
+    "click",
+    () => copyText(
+        offerOutput.value
+    )
+);
+
+
+copyAnswerBtn.addEventListener(
+    "click",
+    () => copyText(
+        answerOutput.value
+    )
+);
+
+
+/* =========================================================
+   RESET
+========================================================= */
+
+resetBtn.addEventListener(
+    "click",
+    () => {
+
+        if (localStream) {
+
+            localStream
+                .getTracks()
+                .forEach(
+                    track => track.stop()
+                );
+
+            localStream = null;
+
+        }
+
+
+        if (pc) {
+
+            try {
+                pc.close();
+            } catch (_) {}
+
+            pc = null;
+
+        }
+
+
+        localVideo.srcObject =
+            null;
+
+        remoteVideo.srcObject =
+            null;
+
+
+        offerOutput.value =
+            "";
+
+        answerInput.value =
+            "";
+
+        offerInput.value =
+            "";
+
+        answerOutput.value =
+            "";
+
+
+        startBtn.disabled =
+            false;
+
+
+        setStatus(
+            "リセットしました。"
+        );
+
+    }
+);
+
+
+/* =========================================================
+   INITIAL UI
+========================================================= */
+
+senderPanel.classList.remove(
+    "hidden"
+);
+
+receiverPanel.classList.add(
+    "hidden"
+);
+
+</script>
+
 </body>
 </html>
