@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VTuber Single Page App</title>
-  
+  <title>FaceMesh Camera Tracker</title>
+
   <!-- PeerJS -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <!-- MediaPipe FaceMesh -->
+  <!-- MediaPipe FaceMesh & Camera Utils -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
@@ -16,235 +16,260 @@
     body {
       margin: 0; padding: 0;
       width: 100vw; height: 100vh;
+      background-color: #000;
+      color: #fff;
       font-family: sans-serif;
       overflow: hidden;
     }
 
-    /* ---------------- PC表示 ---------------- */
-    body.pc-mode {
-      background-color: #00ff00; /* クロマキー用グリーン */
-      display: flex; justify-content: center; align-items: center;
+    /* 映像＋Canvasレイアウト */
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
 
-    #info-panel {
-      position: absolute; top: 10px; left: 10px;
-      background: rgba(0,0,0,0.85); color: white;
-      padding: 15px; border-radius: 10px; font-size: 14px;
-      z-index: 100;
+    video, canvas {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
 
-    #avatar-container { width: 400px; height: 400px; }
-    #avatar-svg { width: 100%; height: 100%; }
+    /* ミラー設定用クラス */
+    .mirror {
+      transform: scaleX(-1);
+    }
 
-    /* ---------------- iPad表示 ---------------- */
-    body.ipad-mode {
-      background-color: #1e1e2e; color: #cdd6f4;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 20px; text-align: center;
+    /* UI パネル */
+    #ui-panel {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 15px;
+      border-radius: 10px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 300px;
+    }
+
+    input, button {
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid #555;
+    }
+
+    input {
+      background: #222;
+      color: #fff;
+      text-align: center;
+    }
+
+    button {
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #357abd;
     }
 
     .ipad-ui { display: none; }
-    body.ipad-mode .ipad-ui { display: flex; flex-direction: column; align-items: center; }
-    body.ipad-mode #avatar-container,
-    body.ipad-mode #info-panel { display: none; }
-
-    #status { font-size: 18px; margin-bottom: 20px; font-weight: bold; }
-    input {
-      padding: 12px; font-size: 18px; border-radius: 8px;
-      border: 1px solid #45475a; width: 220px; text-align: center; margin-bottom: 12px;
-    }
-    button {
-      padding: 12px 24px; font-size: 18px; border-radius: 8px;
-      border: none; background: #89b4fa; color: #11111b; font-weight: bold; cursor: pointer;
-    }
-
-    video { display: none; } /* カメラ映像は完全非表示 */
+    body.ipad-mode .ipad-ui { display: flex; flex-direction: column; gap: 10px; }
+    body.ipad-mode .pc-ui { display: none; }
   </style>
 </head>
 <body class="pc-mode">
 
-  <!-- PC画面用: ID設定・案内パネル -->
-  <div id="info-panel">
-    <div id="pc-setup">
-      <b>好きなIDを決めてください</b><br>
-      <small>（例: 1234 や myroom など）</small><br><br>
-      <input type="text" id="my-custom-id" placeholder="合言葉IDを入力" value="1234"><br>
-      <button id="set-id-btn">このIDで待機する</button>
+  <div id="container">
+    <video id="webcam" playsinline autoplay muted class="mirror"></video>
+    <canvas id="mesh-canvas" class="mirror"></canvas>
+  </div>
+
+  <div id="ui-panel">
+    <!-- PC用 UI -->
+    <div class="pc-ui">
+      <div><b>PC モード</b></div>
+      <div>ID: <input type="text" id="pc-id-input" value="1234"></div>
+      <button id="pc-start-btn">このIDで待機する</button>
+      <div id="pc-status">IDを決めて開始してください</div>
     </div>
-    <div id="pc-waiting" style="display: none;">
-      接続ID: <b id="current-id" style="color:#a6e3a1; font-size: 18px;"></b><br>
-      <small id="pc-status">※iPadで ?role=ipad を開き、このIDを入力してください</small>
+
+    <!-- iPad用 UI -->
+    <div class="ipad-ui">
+      <div><b>iPad モード</b></div>
+      <input type="text" id="target-id-input" placeholder="PCのIDを入力" value="1234">
+      <button id="connect-btn">PCに接続する</button>
+      <div id="ipad-status">PCのIDを入力してください</div>
     </div>
+
+    <!-- 共通設定: ミラー切替 -->
+    <button id="toggle-mirror-btn">ミラー反転 (ON/OFF)</button>
   </div>
-
-  <!-- PC画面用: アバターSVG -->
-  <div id="avatar-container">
-    <svg viewBox="0 0 200 200" id="avatar-svg">
-      <!-- 髪（後） -->
-      <path d="M 40,100 Q 100,20 160,100 L 170,160 L 30,160 Z" fill="#6c5ce7" />
-      <!-- 顔 -->
-      <path d="M 50,70 Q 100,160 150,70 Q 150,40 100,35 Q 50,40 50,70 Z" fill="#ffeaa7" />
-      <!-- 前髪 -->
-      <path d="M 45,65 Q 100,85 155,65 Q 140,30 100,30 Q 60,30 45,65 Z" fill="#a29bfe" />
-
-      <!-- 左目 -->
-      <g id="left-eye">
-        <ellipse cx="75" cy="80" rx="10" ry="12" fill="#2d3436" />
-        <ellipse cx="75" cy="80" rx="4" ry="5" fill="#00cec9" />
-        <circle cx="72" cy="76" r="2.5" fill="#ffffff" />
-      </g>
-
-      <!-- 右目 -->
-      <g id="right-eye">
-        <ellipse cx="125" cy="80" rx="10" ry="12" fill="#2d3436" />
-        <ellipse cx="125" cy="80" rx="4" ry="5" fill="#00cec9" />
-        <circle cx="122" cy="76" r="2.5" fill="#ffffff" />
-      </g>
-
-      <!-- 口 -->
-      <path id="mouth" d="M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z" fill="#ff7675" stroke="#d63031" stroke-width="1.5" />
-    </svg>
-  </div>
-
-  <!-- iPad画面用 UI -->
-  <div class="ipad-ui">
-    <div id="status">PC側のIDを入力してください</div>
-    <input type="text" id="pc-id" placeholder="PC側のIDを入力" value="1234">
-    <button id="connect-btn">PCに接続して配信開始</button>
-  </div>
-
-  <video id="webcam" playsinline muted></video>
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const isIpad = urlParams.get('role') === 'ipad';
 
-    function distance(p1, p2) {
-      return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    const videoEl = document.getElementById('webcam');
+    const canvasEl = document.getElementById('mesh-canvas');
+    const ctx = canvasEl.getContext('2d');
+    const toggleMirrorBtn = document.getElementById('toggle-mirror-btn');
+
+    let currentLandmarks = null;
+    let isMirrored = true;
+
+    // ミラー設定の切り替え
+    toggleMirrorBtn.addEventListener('click', () => {
+      isMirrored = !isMirrored;
+      if (isMirrored) {
+        videoEl.classList.add('mirror');
+        canvasEl.classList.add('mirror');
+      } else {
+        videoEl.classList.remove('mirror');
+        canvasEl.classList.remove('mirror');
+      }
+    });
+
+    // Canvasサイズの同期
+    function resizeCanvas() {
+      canvasEl.width = videoEl.videoWidth || window.innerWidth;
+      canvasEl.height = videoEl.videoHeight || window.innerHeight;
+    }
+    videoEl.addEventListener('loadedmetadata', resizeCanvas);
+    window.addEventListener('resize', resizeCanvas);
+
+    // FaceMesh 描画処理
+    function drawMesh(landmarks) {
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      if (!landmarks) return;
+
+      const w = canvasEl.width;
+      const h = canvasEl.height;
+
+      // メッシュ線の描画
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 1;
+
+      if (typeof FACEMESH_TESSELATION !== 'undefined') {
+        for (const i of FACEMESH_TESSELATION) {
+          const p1 = landmarks[i[0]];
+          const p2 = landmarks[i[1]];
+          ctx.beginPath();
+          ctx.moveTo(p1.x * w, p1.y * h);
+          ctx.lineTo(p2.x * w, p2.y * h);
+          ctx.stroke();
+        }
+      } else {
+        // フォールバック: 全ランドマークにドットを描画
+        ctx.fillStyle = '#00ffcc';
+        for (const p of landmarks) {
+          ctx.beginPath();
+          ctx.arc(p.x * w, p.y * h, 1.5, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
     }
 
     if (isIpad) {
-      // ---------------- iPad 側 ----------------
+      // ---------------- 【 iPad モード 】 ----------------
       document.body.className = 'ipad-mode';
-
-      const statusEl = document.getElementById('status');
-      const pcIdInput = document.getElementById('pc-id');
+      const targetIdInput = document.getElementById('target-id-input');
       const connectBtn = document.getElementById('connect-btn');
-      const videoElement = document.getElementById('webcam');
+      const ipadStatus = document.getElementById('ipad-status');
 
       const peer = new Peer();
       let conn = null;
 
-      connectBtn.addEventListener('click', () => {
-        const targetId = pcIdInput.value.trim();
-        if (!targetId) return alert('PC側のIDを入力してください');
+      // iPad 自身のカメラ起動 ＆ FaceMesh トラッキング
+      const faceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+      });
+      faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
 
-        statusEl.innerText = "接続中...";
+      faceMesh.onResults((results) => {
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          const landmarks = results.multiFaceLandmarks[0];
+          drawMesh(landmarks); // iPad自身の画面へ描画
+
+          // PCへメッシュ座標データを送信
+          if (conn && conn.open) {
+            conn.send({ landmarks: landmarks });
+          }
+        }
+      });
+
+      const camera = new Camera(videoEl, {
+        onFrame: async () => { await faceMesh.send({ image: videoEl }); },
+        width: 1280, height: 720
+      });
+      camera.start();
+
+      connectBtn.addEventListener('click', () => {
+        const targetId = targetIdInput.value.trim();
+        if (!targetId) return;
+
+        ipadStatus.innerText = "接続中...";
         conn = peer.connect(targetId);
 
         conn.on('open', () => {
-          statusEl.innerText = "PCに接続しました！表情トラッキング中...";
-          startCameraTracking();
+          ipadStatus.innerText = "PCに接続完了！データ送信中";
         });
-
         conn.on('close', () => {
-          statusEl.innerText = "切断されました。再接続してください。";
-        });
-
-        conn.on('error', (err) => {
-          statusEl.innerText = "接続エラー: IDが間違っているか、PCが待機していません";
+          ipadStatus.innerText = "切断されました";
         });
       });
 
-      function startCameraTracking() {
-        const faceMesh = new FaceMesh({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
-
-        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
-
-        faceMesh.onResults((results) => {
-          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0 || !conn || !conn.open) return;
-
-          const landmarks = results.multiFaceLandmarks[0];
-
-          const mouthHeight = distance(landmarks[13], landmarks[14]);
-          const mouthWidth = distance(landmarks[61], landmarks[291]);
-          const mouthRatio = mouthHeight / mouthWidth;
-
-          const leftEAR = distance(landmarks[159], landmarks[145]) / distance(landmarks[33], landmarks[133]);
-          const rightEAR = distance(landmarks[386], landmarks[374]) / distance(landmarks[362], landmarks[263]);
-
-          conn.send({
-            mouthRatio: mouthRatio,
-            leftEyeClosed: leftEAR < 0.18,
-            rightEyeClosed: rightEAR < 0.18
-          });
-        });
-
-        const camera = new Camera(videoElement, {
-          onFrame: async () => { await faceMesh.send({ image: videoElement }); },
-          width: 640, height: 480
-        });
-        camera.start();
-      }
-
     } else {
-      // ---------------- PC 側 ----------------
+      // ---------------- 【 PC モード 】 ----------------
       document.body.className = 'pc-mode';
-
-      const customIdInput = document.getElementById('my-custom-id');
-      const setIdBtn = document.getElementById('set-id-btn');
-      const pcSetup = document.getElementById('pc-setup');
-      const pcWaiting = document.getElementById('pc-waiting');
-      const currentIdEl = document.getElementById('current-id');
+      const pcIdInput = document.getElementById('pc-id-input');
+      const pcStartBtn = document.getElementById('pc-start-btn');
       const pcStatus = document.getElementById('pc-status');
 
-      const mouthPath = document.getElementById('mouth');
-      const leftEye = document.getElementById('left-eye');
-      const rightEye = document.getElementById('right-eye');
+      // PC 自身のカメラ表示（映像のみ起動）
+      navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
+        .then((stream) => {
+          videoEl.srcObject = stream;
+        })
+        .catch((err) => {
+          pcStatus.innerText = "カメラ取得エラー: " + err.message;
+        });
 
       let peer = null;
 
-      setIdBtn.addEventListener('click', () => {
-        const customId = customIdInput.value.trim();
-        if (!customId) return alert('IDを入力してください');
+      pcStartBtn.addEventListener('click', () => {
+        const customId = pcIdInput.value.trim();
+        if (!customId) return;
 
-        // 指定したIDでPeerオブジェクトを作成
         peer = new Peer(customId);
 
         peer.on('open', (id) => {
-          pcSetup.style.display = 'none';
-          pcWaiting.style.display = 'block';
-          currentIdEl.innerText = id;
+          pcStatus.innerText = `待機中 (ID: ${id})`;
         });
 
         peer.on('error', (err) => {
-          if (err.type === 'unavailable-id') {
-            alert('そのIDは既に使用されています。別のID（例: ' + customId + '99）にしてください。');
-          } else {
-            alert('エラーが発生しました: ' + err.message);
-          }
+          pcStatus.innerText = "エラー: " + err.type;
         });
 
+        // iPadから届いたメッシュデータを画面に描画
         peer.on('connection', (conn) => {
-          pcStatus.innerText = "iPadと接続完了！連動中...";
+          pcStatus.innerText = "iPadと連動中！";
 
           conn.on('data', (data) => {
-            if (data.mouthRatio > 0.35) {
-              mouthPath.setAttribute('d', 'M 85,115 Q 100,140 115,115 Q 100,100 85,115 Z');
-            } else if (data.mouthRatio > 0.18) {
-              mouthPath.setAttribute('d', 'M 85,115 Q 100,128 115,115 Q 100,110 85,115 Z');
-            } else {
-              mouthPath.setAttribute('d', 'M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z');
+            if (data.landmarks) {
+              drawMesh(data.landmarks); // iPadの顔トラッキング座標をPC映像上に描画
             }
-
-            leftEye.style.transform = data.leftEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
-            leftEye.style.transformOrigin = '75px 80px';
-
-            rightEye.style.transform = data.rightEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
-            rightEye.style.transformOrigin = '125px 80px';
           });
         });
       });
