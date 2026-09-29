@@ -3,230 +3,231 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Browser VTuber Avatar</title>
+  <title>VTuber Single Page App</title>
   
-  <!-- MediaPipe Face Landmarker ライブラリ -->
+  <!-- PeerJS (WebRTC通信) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- MediaPipe FaceMesh (iPad用トラッキング) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
     body {
-      margin: 0;
-      padding: 0;
-      width: 100vw;
-      height: 100vh;
-      background-color: #00ff00; /* クロマキー用グリーン（配信ソフト等で透過可能） */
-      overflow: hidden;
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
       font-family: sans-serif;
-    }
-
-    /* 画面中央のVTuberアバター用コンテナ */
-    #avatar-container {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 400px;
-      height: 400px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 1;
-    }
-
-    /* 左下のカメラプレビュー枠（実物確認用） */
-    #camera-container {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      width: 160px;
-      height: 120px;
-      border-radius: 12px;
       overflow: hidden;
-      border: 3px solid rgba(255, 255, 255, 0.8);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      background-color: #000;
-      z-index: 10;
     }
 
-    #webcam {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1); /* 鏡合わせ表示 */
+    /* ---------------- PC表示（デフォルト） ---------------- */
+    body.pc-mode {
+      background-color: #00ff00; /* クロマキー用グリーン */
+      display: flex; justify-content: center; align-items: center;
     }
 
-    /* UIオーバーレイ */
-    #status {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.6);
-      color: #fff;
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      z-index: 20;
+    #info-panel {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.8); color: white;
+      padding: 12px 16px; border-radius: 8px; font-size: 14px;
+      z-index: 100;
+    }
+    #my-id { font-weight: bold; color: #a6e3a1; font-size: 18px; user-select: all; }
+
+    #avatar-container { width: 400px; height: 400px; }
+    #avatar-svg { width: 100%; height: 100%; }
+
+    /* ---------------- iPad表示 ---------------- */
+    body.ipad-mode {
+      background-color: #1e1e2e;
+      color: #cdd6f4;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 20px; text-align: center;
     }
 
-    /* アバター描画用SVG */
-    svg {
-      width: 100%;
-      height: 100%;
+    .ipad-ui { display: none; }
+    body.ipad-mode .ipad-ui { display: flex; flex-direction: column; align-items: center; }
+    body.ipad-mode #avatar-container,
+    body.ipad-mode #info-panel { display: none; }
+
+    #status { font-size: 18px; margin-bottom: 20px; font-weight: bold; }
+    input {
+      padding: 12px; font-size: 18px; border-radius: 8px;
+      border: 1px solid #45475a; width: 220px; text-align: center; margin-bottom: 15px;
     }
+    button {
+      padding: 12px 24px; font-size: 18px; border-radius: 8px;
+      border: none; background: #89b4fa; color: #11111b; font-weight: bold; cursor: pointer;
+    }
+
+    video { display: none; } /* カメラ映像は完全非表示 */
   </style>
 </head>
-<body>
+<body class="pc-mode">
 
-  <div id="status">カメラ起動中...</div>
+  <!-- PC画面用: ID案内パネル -->
+  <div id="info-panel">
+    接続ID: <span id="my-id">発行中...</span><br>
+    <small>※iPadでこのページの末尾に <b>?role=ipad</b> を付けて開き、上記IDを入力してください</small>
+  </div>
 
-  <!-- 中央のVTuberアバター（SVGグラフィック） -->
+  <!-- PC画面用: アバターSVG -->
   <div id="avatar-container">
     <svg viewBox="0 0 200 200" id="avatar-svg">
       <!-- 髪（後） -->
       <path d="M 40,100 Q 100,20 160,100 L 170,160 L 30,160 Z" fill="#6c5ce7" />
-      
-      <!-- 輪郭 -->
+      <!-- 顔 -->
       <path d="M 50,70 Q 100,160 150,70 Q 150,40 100,35 Q 50,40 50,70 Z" fill="#ffeaa7" />
-      
-      <!-- 髪（前・前髪） -->
+      <!-- 前髪 -->
       <path d="M 45,65 Q 100,85 155,65 Q 140,30 100,30 Q 60,30 45,65 Z" fill="#a29bfe" />
 
       <!-- 左目 -->
       <g id="left-eye">
         <ellipse cx="75" cy="80" rx="10" ry="12" fill="#2d3436" />
-        <ellipse id="left-pupil" cx="75" cy="80" rx="4" ry="5" fill="#00cec9" />
+        <ellipse cx="75" cy="80" rx="4" ry="5" fill="#00cec9" />
         <circle cx="72" cy="76" r="2.5" fill="#ffffff" />
       </g>
 
       <!-- 右目 -->
       <g id="right-eye">
         <ellipse cx="125" cy="80" rx="10" ry="12" fill="#2d3436" />
-        <ellipse id="right-pupil" cx="125" cy="80" rx="4" ry="5" fill="#00cec9" />
+        <ellipse cx="125" cy="80" rx="4" ry="5" fill="#00cec9" />
         <circle cx="122" cy="76" r="2.5" fill="#ffffff" />
       </g>
 
-      <!-- 眉毛 -->
-      <path d="M 65,65 Q 75,60 85,65" stroke="#2d3436" stroke-width="2.5" fill="none" stroke-linecap="round" />
-      <path d="M 115,65 Q 125,60 135,65" stroke="#2d3436" stroke-width="2.5" fill="none" stroke-linecap="round" />
-
-      <!-- 口（ランドマークでリアルタイムに変形） -->
-      <path id="mouth" d="M 85,115 Q 100,120 115,115 Q 100,120 85,115 Z" fill="#ff7675" stroke="#d63031" stroke-width="1.5" />
-      
-      <!-- ほっぺ（チーク） -->
-      <circle cx="65" cy="98" r="6" fill="#ff7675" opacity="0.4" />
-      <circle cx="135" cy="98" r="6" fill="#ff7675" opacity="0.4" />
+      <!-- 口 -->
+      <path id="mouth" d="M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z" fill="#ff7675" stroke="#d63031" stroke-width="1.5" />
     </svg>
   </div>
 
-  <!-- 左下の実写カメラ枠 -->
-  <div id="camera-container">
-    <video id="webcam" playsinline muted></video>
+  <!-- iPad画面用 UI -->
+  <div class="ipad-ui">
+    <div id="status">初期化中...</div>
+    <input type="text" id="pc-id" placeholder="PC側のIDを入力">
+    <button id="connect-btn">PCに接続して配信開始</button>
   </div>
 
+  <!-- カメラ要素（非表示） -->
+  <video id="webcam" playsinline muted></video>
+
   <script>
-    const videoElement = document.getElementById('webcam');
-    const statusEl = document.getElementById('status');
-    const mouthPath = document.getElementById('mouth');
-    const leftEye = document.getElementById('left-eye');
-    const rightEye = document.getElementById('right-eye');
+    const urlParams = new URLSearchParams(window.location.search);
+    const isIpad = urlParams.get('role') === 'ipad';
 
     // 距離計算関数
     function distance(p1, p2) {
       return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
     }
 
-    // MediaPipe FaceMesh のセットアップ
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-    });
+    if (isIpad) {
+      // ---------------- 【 iPad 側の処理 】 ----------------
+      document.body.className = 'ipad-mode';
 
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
+      const statusEl = document.getElementById('status');
+      const pcIdInput = document.getElementById('pc-id');
+      const connectBtn = document.getElementById('connect-btn');
+      const videoElement = document.getElementById('webcam');
 
-    // 顔認識結果の処理（表情トラッキング）
-    faceMesh.onResults((results) => {
-      if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-        statusEl.innerText = "顔を認識できません";
-        return;
+      const peer = new Peer();
+      let conn = null;
+
+      peer.on('open', () => {
+        statusEl.innerText = "準備完了：PC画面のIDを入力してください";
+      });
+
+      connectBtn.addEventListener('click', () => {
+        const targetId = pcIdInput.value.trim();
+        if (!targetId) return alert('PC側のIDを入力してください');
+
+        statusEl.innerText = "接続中...";
+        conn = peer.connect(targetId);
+
+        conn.on('open', () => {
+          statusEl.innerText = "PCに接続しました！カメラの表情を送信中...";
+          startCameraTracking();
+        });
+
+        conn.on('close', () => {
+          statusEl.innerText = "切断されました。再読み込みしてください。";
+        });
+      });
+
+      function startCameraTracking() {
+        const faceMesh = new FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5 });
+
+        faceMesh.onResults((results) => {
+          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0 || !conn || !conn.open) return;
+
+          const landmarks = results.multiFaceLandmarks[0];
+
+          // 口の計算
+          const mouthHeight = distance(landmarks[13], landmarks[14]);
+          const mouthWidth = distance(landmarks[61], landmarks[291]);
+          const mouthRatio = mouthHeight / mouthWidth;
+
+          // 目の計算
+          const leftEAR = distance(landmarks[159], landmarks[145]) / distance(landmarks[33], landmarks[133]);
+          const rightEAR = distance(landmarks[386], landmarks[374]) / distance(landmarks[362], landmarks[263]);
+
+          // 数値データのみを送信（映像は送らない）
+          conn.send({
+            mouthRatio: mouthRatio,
+            leftEyeClosed: leftEAR < 0.18,
+            rightEyeClosed: rightEAR < 0.18
+          });
+        });
+
+        const camera = new Camera(videoElement, {
+          onFrame: async () => { await faceMesh.send({ image: videoElement }); },
+          width: 640, height: 480
+        });
+        camera.start().catch(err => {
+          statusEl.innerText = "カメラ起動エラー: " + err.message;
+        });
       }
-      statusEl.innerText = "トラッキング中";
 
-      const landmarks = results.multiFaceLandmarks[0];
+    } else {
+      // ---------------- 【 PC 側の処理 】 ----------------
+      document.body.className = 'pc-mode';
 
-      // --- 1. 口の開閉度（縦横の距離比率） ---
-      const topLip = landmarks[13];
-      const bottomLip = landmarks[14];
-      const leftCorner = landmarks[61];
-      const rightCorner = landmarks[291];
+      const myIdEl = document.getElementById('my-id');
+      const mouthPath = document.getElementById('mouth');
+      const leftEye = document.getElementById('left-eye');
+      const rightEye = document.getElementById('right-eye');
 
-      const mouthHeight = distance(topLip, bottomLip);
-      const mouthWidth = distance(leftCorner, rightCorner);
-      const mouthOpenRatio = mouthHeight / mouthWidth;
+      const peer = new Peer();
 
-      // 口のパターン制御 (あ・い・う・え・お 簡易シミュレーション)
-      if (mouthOpenRatio > 0.35) {
-        // 大きく口を開ける ("あ" / "お")
-        mouthPath.setAttribute('d', 'M 85,115 Q 100,140 115,115 Q 100,100 85,115 Z');
-      } else if (mouthOpenRatio > 0.18) {
-        // 半開き ("え")
-        mouthPath.setAttribute('d', 'M 85,115 Q 100,128 115,115 Q 100,110 85,115 Z');
-      } else {
-        // 閉じ口
-        mouthPath.setAttribute('d', 'M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z');
-      }
+      peer.on('open', (id) => {
+        myIdEl.innerText = id;
+      });
 
-      // --- 2. 目のまばたき判定 ---
-      // 左目
-      const leftEyeTop = landmarks[159];
-      const leftEyeBottom = landmarks[145];
-      const leftEyeLeft = landmarks[33];
-      const leftEyeRight = landmarks[133];
-      const leftEAR = distance(leftEyeTop, leftEyeBottom) / distance(leftEyeLeft, leftEyeRight);
+      peer.on('connection', (conn) => {
+        myIdEl.innerText = "iPadと接続完了！";
 
-      // 右目
-      const rightEyeTop = landmarks[386];
-      const rightEyeBottom = landmarks[374];
-      const rightEyeLeft = landmarks[362];
-      const rightEyeRight = landmarks[263];
-      const rightEAR = distance(rightEyeTop, rightEyeBottom) / distance(rightEyeLeft, rightEyeRight);
+        conn.on('data', (data) => {
+          // 口の変形
+          if (data.mouthRatio > 0.35) {
+            mouthPath.setAttribute('d', 'M 85,115 Q 100,140 115,115 Q 100,100 85,115 Z');
+          } else if (data.mouthRatio > 0.18) {
+            mouthPath.setAttribute('d', 'M 85,115 Q 100,128 115,115 Q 100,110 85,115 Z');
+          } else {
+            mouthPath.setAttribute('d', 'M 85,118 Q 100,121 115,118 Q 100,117 85,118 Z');
+          }
 
-      // まばたき描画の切り替え（0.18未満で目を閉じる）
-      if (leftEAR < 0.18) {
-        leftEye.style.transformOrigin = '75px 80px';
-        leftEye.style.transform = 'scaleY(0.1)';
-      } else {
-        leftEye.style.transform = 'scaleY(1)';
-      }
+          // 目のまばたき
+          leftEye.style.transform = data.leftEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
+          leftEye.style.transformOrigin = '75px 80px';
 
-      if (rightEAR < 0.18) {
-        rightEye.style.transformOrigin = '125px 80px';
-        rightEye.style.transform = 'scaleY(0.1)';
-      } else {
-        rightEye.style.transform = 'scaleY(1)';
-      }
-    });
-
-    // カメラの起動
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await faceMesh.send({ image: videoElement });
-      },
-      width: 640,
-      height: 480
-    });
-
-    camera.start().catch(err => {
-      statusEl.innerText = "カメラエラー: " + err.message;
-      console.error(err);
-    });
+          rightEye.style.transform = data.rightEyeClosed ? 'scaleY(0.1)' : 'scaleY(1)';
+          rightEye.style.transformOrigin = '125px 80px';
+        });
+      });
+    }
   </script>
 </body>
 </html>
