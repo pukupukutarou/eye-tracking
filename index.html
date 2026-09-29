@@ -1,1581 +1,868 @@
+
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
-
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
-<meta
-    name="viewport"
-    content="width=device-width,
-             initial-scale=1.0,
-             maximum-scale=1.0,
-             user-scalable=no"
->
-
-<title>Face Camera</title>
+<title>Camera Link</title>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
 <style>
-
 * {
     box-sizing: border-box;
 }
 
-html,
-body {
-
+html, body {
     margin: 0;
-    padding: 0;
-
     width: 100%;
     height: 100%;
-
-    background: #111;
-
+    background: #080808;
     color: white;
-
     font-family: Arial, sans-serif;
-
 }
 
 body {
-
     display: flex;
-
     justify-content: center;
-    align-items: center;
-
 }
 
-#app {
-
-    width: 100%;
-    max-width: 900px;
-
+.app {
+    width: min(900px, 100%);
     padding: 20px;
-
 }
 
 h1 {
+    font-size: 24px;
+    margin: 0 0 8px;
+}
 
-    font-size: 22px;
-
-    margin: 0 0 15px 0;
-
+.subtitle {
+    color: #888;
+    margin-bottom: 20px;
 }
 
 .panel {
-
-    background: #222;
-
-    border-radius: 14px;
-
+    background: #151515;
+    border: 1px solid #292929;
+    border-radius: 16px;
     padding: 18px;
-
-    margin-bottom: 15px;
-
+    margin-bottom: 16px;
 }
 
-/* =========================================================
-   Video
-   ========================================================= */
-
-#videoContainer {
-
-    position: relative;
-
-    width: 100%;
-
-    background: #000;
-
-    border-radius: 12px;
-
-    overflow: hidden;
-
-    line-height: 0;
-
-}
-
-video {
-
+label {
     display: block;
+    font-size: 13px;
+    color: #aaa;
+    margin-bottom: 8px;
+}
 
+select,
+input,
+button {
     width: 100%;
-
-    height: auto;
-
-    max-height: 70vh;
-
-    object-fit: contain;
-
-    background: #000;
-
-    border: 0;
-
-    outline: none;
-
-    pointer-events: none;
-
-    user-select: none;
-
-    -webkit-user-select: none;
-
+    padding: 13px;
+    border-radius: 10px;
+    border: 1px solid #3a3a3a;
+    background: #0d0d0d;
+    color: white;
+    font-size: 16px;
 }
 
-/* Chrome / Edge / Safari */
-
-video::-webkit-media-controls {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-enclosure {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-panel {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-play-button {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-timeline {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-current-time-display {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-time-remaining-display {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-mute-button {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-volume-slider {
-
-    display: none !important;
-
-}
-
-video::-webkit-media-controls-fullscreen-button {
-
-    display: none !important;
-
-}
-
-
-/* =========================================================
-   Input
-   ========================================================= */
-
-input {
-
-    width: 150px;
-
-    padding: 12px;
-
-    font-size: 18px;
-
+.pin {
+    font-size: 28px;
     text-align: center;
-
-    letter-spacing: 5px;
-
-    border: none;
-
-    border-radius: 8px;
-
-    outline: none;
-
+    letter-spacing: 10px;
 }
 
 button {
-
-    padding: 12px 18px;
-
-    margin-left: 8px;
-
-    font-size: 18px;
-
-    border: none;
-
-    border-radius: 8px;
-
+    margin-top: 12px;
+    border: 0;
+    background: #287cff;
+    font-weight: bold;
     cursor: pointer;
-
 }
 
-button:active {
-
-    transform: scale(0.98);
-
+button.secondary {
+    background: #292929;
 }
 
+button.danger {
+    background: #9b2929;
+}
 
-/* =========================================================
-   Status
-   ========================================================= */
+button:disabled {
+    opacity: .5;
+}
 
-#status {
-
-    margin-top: 14px;
-
+.status {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 10px;
+    background: #0d0d0d;
     color: #aaa;
-
-    white-space: pre-wrap;
-
-    line-height: 1.5;
-
+    word-break: break-word;
 }
 
-#faceInfo {
-
-    margin-top: 10px;
-
-    color: #7cff9a;
-
-    font-family: monospace;
-
-    font-size: 14px;
-
+.status.ok {
+    color: #70e090;
 }
 
-
-/* =========================================================
-   Windows mode
-   ========================================================= */
-
-.windowsMode #videoContainer {
-
-    border-radius: 0;
-
+.status.error {
+    color: #ff7777;
 }
 
+/* ライブモニター */
 
-/* =========================================================
-   Hidden
-   ========================================================= */
+.monitor {
+    position: relative;
+    width: 100%;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #292929;
+}
+
+.liveVideo {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 80vh;
+    background: #000;
+    object-fit: contain;
+
+    /* 動画プレイヤーの操作を無効化 */
+    pointer-events: none;
+
+    /* 選択不可 */
+    user-select: none;
+}
+
+.liveLabel {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(0,0,0,.65);
+    color: #fff;
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.liveDot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff3030;
+    margin-right: 5px;
+}
+
+.monitorPlaceholder {
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 15px;
+}
 
 .hidden {
-
     display: none !important;
-
 }
 
+.info {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #888;
+}
+
+@media (max-width: 600px) {
+    .app {
+        padding: 12px;
+    }
+
+    .panel {
+        padding: 14px;
+    }
+}
 </style>
-
 </head>
-
 
 <body>
 
-<div id="app">
+<div class="app">
 
-    <h1>
-        iPad Camera → Face Tracking
-    </h1>
+<h1>📡 Camera Link</h1>
 
-
-    <div class="panel">
-
-        <div>
-
-            <label>
-                4桁PIN
-            </label>
-
-            <br>
-            <br>
-
-            <input
-                id="pin"
-                maxlength="4"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="1234"
-            >
-
-            <button id="startButton">
-                開始
-            </button>
-
-        </div>
+<div class="subtitle">
+iPad → Windows / Live Monitor
+</div>
 
 
-        <div id="status">
-            待機中
-        </div>
+<!-- 接続 -->
 
+<div class="panel">
 
-        <div id="faceInfo">
-            Face: -
-        </div>
+<label>端末の役割</label>
 
-    </div>
+<select id="role">
 
+<option value="ipad">
+iPad / カメラ送信
+</option>
 
-    <div
-        id="videoContainer"
-        class="panel"
-    >
+<option value="windows">
+Windows / ライブ受信
+</option>
 
-        <video
-            id="video"
-            autoplay
-            playsinline
-            muted
-            disablePictureInPicture
-            controlsList="nodownload noplaybackrate nofullscreen"
-        ></video>
+</select>
 
-    </div>
+<br><br>
 
+<label>4桁PIN</label>
 
-    <canvas
-        id="faceCanvas"
-        class="hidden"
-    ></canvas>
+<input
+    id="pin"
+    class="pin"
+    type="password"
+    inputmode="numeric"
+    maxlength="4"
+    placeholder="0000"
+>
+
+<button id="connectBtn">
+接続開始
+</button>
+
+<div id="status" class="status">
+待機中
+</div>
 
 </div>
 
 
-<script type="module">
 
-// ============================================================
-// MediaPipe
-// ============================================================
+<!-- iPad -->
 
-import {
+<div id="ipadPanel" class="panel">
 
-    FaceLandmarker,
-    FilesetResolver
+<h2>📱 iPad Camera</h2>
 
-}
-from
-"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs";
+<div class="monitor">
+
+<video
+    id="localVideo"
+    class="liveVideo"
+    autoplay
+    muted
+    playsinline
+    disablepictureinpicture
+    controlslist="nodownload noplaybackrate nofullscreen">
+</video>
+
+<div class="liveLabel">
+<span class="liveDot"></span>
+LOCAL CAMERA
+</div>
+
+</div>
+
+<button id="cameraBtn">
+カメラ開始
+</button>
+
+<button id="switchCameraBtn" class="secondary">
+カメラ切替
+</button>
+
+</div>
 
 
-// ============================================================
-// DOM
-// ============================================================
 
-const pinInput =
-    document.getElementById("pin");
+<!-- Windows -->
 
-const startButton =
-    document.getElementById("startButton");
+<div id="windowsPanel" class="panel hidden">
 
-const statusElement =
-    document.getElementById("status");
+<h2>🖥 Windows Live Monitor</h2>
 
-const faceInfo =
-    document.getElementById("faceInfo");
+<div class="monitor">
 
-const video =
-    document.getElementById("video");
+<div id="placeholder" class="monitorPlaceholder">
+接続待機中...
+</div>
+
+<video
+    id="remoteVideo"
+    class="liveVideo hidden"
+    autoplay
+    muted
+    playsinline
+    disablepictureinpicture
+    controlslist="nodownload noplaybackrate nofullscreen">
+</video>
+
+<div id="liveLabel" class="liveLabel hidden">
+<span class="liveDot"></span>
+LIVE
+</div>
+
+</div>
+
+<button id="fullscreenBtn" class="secondary">
+全画面表示
+</button>
+
+</div>
 
 
-// ============================================================
-// State
-// ============================================================
+
+<div class="panel info">
+
+<b>接続方法</b>
+
+<br>
+
+1. iPadで4桁PINを入力して接続開始
+
+<br>
+
+2. カメラを許可
+
+<br>
+
+3. Windowsで同じPINを入力して接続開始
+
+<br>
+
+4. Windowsにライブ映像が表示されます
+
+<br><br>
+
+Offer / Answerの手動操作はありません。
+
+</div>
+
+
+<button id="resetBtn" class="danger">
+接続リセット
+</button>
+
+</div>
+
+
+
+<script>
+
+"use strict";
+
+
+/* =====================================================
+   ELEMENTS
+===================================================== */
+
+const role = document.getElementById("role");
+const pin = document.getElementById("pin");
+const connectBtn = document.getElementById("connectBtn");
+const statusBox = document.getElementById("status");
+
+const ipadPanel = document.getElementById("ipadPanel");
+const windowsPanel = document.getElementById("windowsPanel");
+
+const localVideo = document.getElementById("localVideo");
+const remoteVideo = document.getElementById("remoteVideo");
+
+const cameraBtn = document.getElementById("cameraBtn");
+const switchCameraBtn = document.getElementById("switchCameraBtn");
+
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const resetBtn = document.getElementById("resetBtn");
+
+const placeholder = document.getElementById("placeholder");
+const liveLabel = document.getElementById("liveLabel");
+
+
+/* =====================================================
+   VARIABLES
+===================================================== */
 
 let peer = null;
-
-let dataConnection = null;
-
-let mediaCall = null;
-
 let localStream = null;
+let activeCall = null;
 
-let faceLandmarker = null;
-
-let lastVideoTime = -1;
-
-let lastSendTime = 0;
-
-let faceReady = false;
-
-let pythonSocket = null;
+let currentCamera = "environment";
 
 
-// ============================================================
-// Settings
-// ============================================================
+/* =====================================================
+   UI
+===================================================== */
 
-const MIRROR_FACE_X = true;
+function updateRole() {
 
-const SEND_INTERVAL = 33;
+    const isIPad = role.value === "ipad";
+
+    ipadPanel.classList.toggle("hidden", !isIPad);
+    windowsPanel.classList.toggle("hidden", isIPad);
+
+}
+
+role.addEventListener("change", updateRole);
+
+updateRole();
 
 
-// ============================================================
-// Status
-// ============================================================
+function setStatus(message, type = "") {
 
-function setStatus(text) {
-
-    statusElement.textContent = text;
-
-    console.log(text);
+    statusBox.textContent = message;
+    statusBox.className = "status " + type;
 
 }
 
 
-// ============================================================
-// PIN
-// ============================================================
+/* =====================================================
+   PIN
+===================================================== */
 
-function getPin() {
+function validPIN() {
 
-    const pin =
-        pinInput.value.trim();
+    return /^[0-9]{4}$/.test(pin.value.trim());
 
-    if (!/^\d{4}$/.test(pin)) {
+}
 
-        alert(
-            "4桁のPINを入力してください"
-        );
+function roomID() {
 
-        return null;
+    return "camera-room-" + pin.value.trim();
+
+}
+
+
+/* =====================================================
+   CONNECT
+===================================================== */
+
+connectBtn.addEventListener("click", async () => {
+
+    if (!validPIN()) {
+
+        setStatus("4桁のPINを入力してください。", "error");
+        return;
 
     }
 
-    return pin;
+    connectBtn.disabled = true;
 
-}
+    if (role.value === "ipad") {
 
+        await startIPad();
 
-// ============================================================
-// Peer ID
-// ============================================================
+    } else {
 
-function cameraPeerId(pin) {
-
-    return "face-camera-" + pin;
-
-}
-
-
-// ============================================================
-// MediaPipe
-// ============================================================
-
-async function createFaceLandmarker() {
-
-    setStatus(
-        "顔認識AIを読み込み中..."
-    );
-
-
-    const vision =
-        await FilesetResolver.forVisionTasks(
-
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
-
-        );
-
-
-    faceLandmarker =
-        await FaceLandmarker.createFromOptions(
-
-            vision,
-
-            {
-
-                baseOptions: {
-
-                    modelAssetPath:
-                        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-
-                },
-
-                runningMode:
-                    "VIDEO",
-
-                numFaces:
-                    1,
-
-                minFaceDetectionConfidence:
-                    0.5,
-
-                minFacePresenceConfidence:
-                    0.5,
-
-                minTrackingConfidence:
-                    0.5,
-
-                outputFaceBlendshapes:
-                    false,
-
-                outputFacialTransformationMatrixes:
-                    true
-
-            }
-
-        );
-
-
-    faceReady = true;
-
-
-    console.log(
-        "Face Landmarker ready"
-    );
-
-}
-
-
-// ============================================================
-// Camera
-// ============================================================
-
-async function startCamera() {
-
-    setStatus(
-        "カメラを起動中..."
-    );
-
-
-    localStream =
-        await navigator.mediaDevices.getUserMedia(
-
-            {
-
-                video: {
-
-                    facingMode:
-                        "user",
-
-                    width: {
-
-                        ideal:
-                            1280
-
-                    },
-
-                    height: {
-
-                        ideal:
-                            720
-
-                    },
-
-                    frameRate: {
-
-                        ideal:
-                            30
-
-                    }
-
-                },
-
-                audio:
-                    false
-
-            }
-
-        );
-
-
-    video.srcObject =
-        localStream;
-
-
-    await video.play();
-
-
-    setStatus(
-        "カメラ起動完了"
-    );
-
-}
-
-
-// ============================================================
-// Python WebSocket
-// ============================================================
-
-function connectPython() {
-
-    if (pythonSocket) {
-
-        try {
-
-            pythonSocket.close();
-
-        } catch {}
+        await startWindows();
 
     }
 
+});
 
-    console.log(
-        "Pythonへ接続..."
-    );
 
+/* =====================================================
+   iPAD
+===================================================== */
+
+async function startIPad() {
 
     try {
 
-        pythonSocket =
-            new WebSocket(
-                "ws://127.0.0.1:8765"
+        setStatus("カメラを起動しています...");
+
+        await startCamera();
+
+        if (!localStream) {
+
+            connectBtn.disabled = false;
+            return;
+
+        }
+
+        setStatus("接続サーバーに接続しています...");
+
+        peer = new Peer(roomID(), {
+            debug: 1
+        });
+
+
+        peer.on("open", () => {
+
+            setStatus(
+                "待機中。Windowsで同じPINを入力してください。",
+                "ok"
             );
 
-    }
+        });
 
-    catch (error) {
+
+        /*
+            Windowsからの接続を受け取る
+        */
+
+        peer.on("connection", connection => {
+
+            setStatus("Windowsを検出。映像を送信しています...");
+
+            connection.on("open", () => {
+
+                const call = peer.call(
+                    connection.peer,
+                    localStream
+                );
+
+                activeCall = call;
+
+                call.on("close", () => {
+
+                    setStatus("Windowsとの接続が終了しました。");
+
+                });
+
+                call.on("error", error => {
+
+                    console.error(error);
+
+                    setStatus(
+                        "映像送信エラー: " + error.message,
+                        "error"
+                    );
+
+                });
+
+            });
+
+        });
+
+
+        peer.on("error", error => {
+
+            console.error(error);
+
+            setStatus(
+                "接続エラー: " + error.message,
+                "error"
+            );
+
+            connectBtn.disabled = false;
+
+        });
+
+
+    } catch (error) {
 
         console.error(error);
 
-        return;
-
-    }
-
-
-    pythonSocket.onopen =
-        () => {
-
-            console.log(
-                "Python WebSocket connected"
-            );
-
-        };
-
-
-    pythonSocket.onclose =
-        () => {
-
-            console.log(
-                "Python WebSocket closed"
-            );
-
-            setTimeout(
-                connectPython,
-                1000
-            );
-
-        };
-
-
-    pythonSocket.onerror =
-        error => {
-
-            console.error(
-                "Python WebSocket error",
-                error
-            );
-
-        };
-
-}
-
-
-// ============================================================
-// Python送信
-// ============================================================
-
-function sendToPython(data) {
-
-    if (!pythonSocket) {
-        return;
-    }
-
-
-    if (
-        pythonSocket.readyState !==
-        WebSocket.OPEN
-    ) {
-
-        return;
-
-    }
-
-
-    try {
-
-        pythonSocket.send(
-            JSON.stringify(data)
+        setStatus(
+            "iPad開始失敗: " + error.message,
+            "error"
         );
 
-    }
-
-    catch (error) {
-
-        console.error(
-            error
-        );
+        connectBtn.disabled = false;
 
     }
 
 }
 
 
-// ============================================================
-// Face tracking
-// ============================================================
+/* =====================================================
+   WINDOWS
+===================================================== */
 
-function processFace(timestamp) {
-
-    requestAnimationFrame(
-        processFace
-    );
-
-
-    if (!faceReady) {
-        return;
-    }
-
-
-    if (
-        !video.videoWidth ||
-        !video.videoHeight
-    ) {
-
-        return;
-
-    }
-
-
-    if (
-        video.currentTime ===
-        lastVideoTime
-    ) {
-
-        return;
-
-    }
-
-
-    lastVideoTime =
-        video.currentTime;
-
-
-    let result;
-
+async function startWindows() {
 
     try {
 
-        result =
-            faceLandmarker.detectForVideo(
-                video,
-                timestamp
-            );
+        setStatus("Windows受信を開始しています...");
+
+        peer = new Peer(undefined, {
+            debug: 1
+        });
+
+
+        peer.on("open", () => {
+
+            const target = roomID();
+
+            setStatus("iPadを探しています...");
+
+
+            /*
+                iPadのPeerに接続する
+            */
+
+            const connection = peer.connect(target);
+
+            connection.on("open", () => {
+
+                setStatus("iPadを検出。映像接続中...");
+
+            });
+
+
+            /*
+                iPad側からの映像通話を待つ
+            */
+
+            peer.on("call", call => {
+
+                activeCall = call;
+
+                call.answer();
+
+                call.on("stream", stream => {
+
+                    remoteVideo.srcObject = stream;
+
+                    remoteVideo.classList.remove("hidden");
+                    placeholder.classList.add("hidden");
+                    liveLabel.classList.remove("hidden");
+
+                    remoteVideo.play().catch(() => {});
+
+                    setStatus("📡 LIVE / iPadカメラ受信中", "ok");
+
+                });
+
+                call.on("close", () => {
+
+                    remoteVideo.srcObject = null;
+
+                    remoteVideo.classList.add("hidden");
+                    placeholder.classList.remove("hidden");
+                    liveLabel.classList.add("hidden");
+
+                    setStatus("iPadとの接続が終了しました。");
+
+                });
+
+                call.on("error", error => {
+
+                    console.error(error);
+
+                    setStatus(
+                        "受信エラー: " + error.message,
+                        "error"
+                    );
+
+                });
+
+            });
+
+        });
+
+
+        peer.on("error", error => {
+
+            console.error(error);
+
+            if (error.type === "peer-unavailable") {
+
+                setStatus(
+                    "iPadが見つかりません。iPad側を先に接続してください。",
+                    "error"
+                );
+
+            } else {
+
+                setStatus(
+                    "PeerJSエラー: " + error.message,
+                    "error"
+                );
+
+            }
+
+            connectBtn.disabled = false;
+
+        });
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "Windows開始失敗: " + error.message,
+            "error"
+        );
+
+        connectBtn.disabled = false;
 
     }
 
-    catch (error) {
+}
 
-        console.error(
-            error
-        );
 
-        return;
+/* =====================================================
+   CAMERA
+===================================================== */
 
-    }
+cameraBtn.addEventListener("click", startCamera);
 
+async function startCamera() {
 
-    if (
-        !result ||
-        !result.faceLandmarks ||
-        result.faceLandmarks.length === 0
-    ) {
+    try {
 
-        return;
+        if (!navigator.mediaDevices ||
+            !navigator.mediaDevices.getUserMedia) {
 
-    }
-
-
-    const lm =
-        result.faceLandmarks[0];
-
-
-    // --------------------------------------------------------
-    // Face landmarks
-    // --------------------------------------------------------
-
-    const nose =
-        lm[1];
-
-    const forehead =
-        lm[10];
-
-    const leftEye =
-        lm[33];
-
-    const chin =
-        lm[152];
-
-    const rightEye =
-        lm[263];
-
-
-    // --------------------------------------------------------
-    // 顔中心
-    // --------------------------------------------------------
-
-    const eyeCenterX =
-        (
-            leftEye.x +
-            rightEye.x
-        ) / 2;
-
-
-    const eyeCenterY =
-        (
-            leftEye.y +
-            rightEye.y
-        ) / 2;
-
-
-    // --------------------------------------------------------
-    // X / Y
-    // --------------------------------------------------------
-
-    let x =
-        (
-            eyeCenterX -
-            0.5
-        ) * 2;
-
-
-    let y =
-        (
-            eyeCenterY -
-            0.5
-        ) * 2;
-
-
-    if (MIRROR_FACE_X) {
-
-        x = -x;
-
-    }
-
-
-    x =
-        Math.max(
-            -1,
-            Math.min(
-                1,
-                x
-            )
-        );
-
-
-    y =
-        Math.max(
-            -1,
-            Math.min(
-                1,
-                y
-            )
-        );
-
-
-    // --------------------------------------------------------
-    // Face size
-    // --------------------------------------------------------
-
-    const faceHeight =
-        Math.abs(
-            chin.y -
-            forehead.y
-        );
-
-
-    let scale =
-        faceHeight /
-        0.35;
-
-
-    scale =
-        Math.max(
-            0.5,
-            Math.min(
-                1.8,
-                scale
-            )
-        );
-
-
-    // --------------------------------------------------------
-    // Yaw
-    // --------------------------------------------------------
-
-    const eyeDistance =
-        Math.abs(
-            rightEye.x -
-            leftEye.x
-        );
-
-
-    let yaw = 0;
-
-
-    if (
-        eyeDistance >
-        0.0001
-    ) {
-
-        yaw =
-            (
-                nose.x -
-                eyeCenterX
-            )
-            /
-            eyeDistance;
-
-
-        yaw *= 2;
-
-    }
-
-
-    yaw =
-        Math.max(
-            -1,
-            Math.min(
-                1,
-                yaw
-            )
-        );
-
-
-    // --------------------------------------------------------
-    // Pitch
-    // --------------------------------------------------------
-
-    let pitch = 0;
-
-
-    if (
-        faceHeight >
-        0.0001
-    ) {
-
-        pitch =
-            (
-                nose.y -
-                eyeCenterY
-            )
-            /
-            faceHeight;
-
-
-        pitch -=
-            0.10;
-
-
-        pitch *=
-            4;
-
-    }
-
-
-    pitch =
-        Math.max(
-            -1,
-            Math.min(
-                1,
-                pitch
-            )
-        );
-
-
-    // --------------------------------------------------------
-    // Roll
-    // --------------------------------------------------------
-
-    let roll =
-        Math.atan2(
-
-            rightEye.y -
-            leftEye.y,
-
-            rightEye.x -
-            leftEye.x
-
-        );
-
-
-    roll /=
-        Math.PI;
-
-
-    roll =
-        Math.max(
-            -1,
-            Math.min(
-                1,
-                roll
-            )
-        );
-
-
-    // --------------------------------------------------------
-    // 送信頻度
-    // --------------------------------------------------------
-
-    const now =
-        performance.now();
-
-
-    if (
-        now -
-        lastSendTime <
-        SEND_INTERVAL
-    ) {
-
-        return;
-
-    }
-
-
-    lastSendTime =
-        now;
-
-
-    const data = {
-
-        type:
-            "face",
-
-        x:
-            x,
-
-        y:
-            y,
-
-        yaw:
-            yaw,
-
-        pitch:
-            pitch,
-
-        roll:
-            roll,
-
-        scale:
-            scale,
-
-        time:
-            now
-
-    };
-
-
-    // --------------------------------------------------------
-    // Windowsへ送信
-    // --------------------------------------------------------
-
-    if (
-        dataConnection &&
-        dataConnection.open
-    ) {
-
-        try {
-
-            dataConnection.send(
-                data
+            throw new Error(
+                "HTTPS環境でカメラを使用してください。"
             );
 
         }
 
-        catch (error) {
 
-            console.error(
-                error
-            );
+        if (localStream) {
+
+            localStream.getTracks().forEach(track => {
+                track.stop();
+            });
 
         }
+
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+
+            video: {
+
+                facingMode: currentCamera,
+
+                width: {
+                    ideal: 1920
+                },
+
+                height: {
+                    ideal: 1080
+                },
+
+                frameRate: {
+                    ideal: 30,
+                    max: 60
+                }
+
+            },
+
+            audio: false
+
+        });
+
+
+        localVideo.srcObject = localStream;
+
+        await localVideo.play();
+
+        cameraBtn.textContent = "カメラ再起動";
+
+        setStatus("カメラ起動完了。", "ok");
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "カメラ起動失敗: " + error.message,
+            "error"
+        );
 
     }
 
 }
 
 
-// ============================================================
-// iPad
-// ============================================================
+/* =====================================================
+   CAMERA SWITCH
+===================================================== */
 
-async function startIPad(pin) {
+switchCameraBtn.addEventListener("click", async () => {
 
-    document.body.classList.remove(
-        "windowsMode"
-    );
-
+    currentCamera =
+        currentCamera === "environment"
+            ? "user"
+            : "environment";
 
     await startCamera();
 
-    await createFaceLandmarker();
+});
 
 
-    const id =
-        cameraPeerId(pin);
+/* =====================================================
+   FULLSCREEN
+===================================================== */
 
+fullscreenBtn.addEventListener("click", async () => {
 
-    setStatus(
-        "iPad準備中..."
-    );
+    const monitor = remoteVideo.parentElement;
 
+    if (monitor.requestFullscreen) {
 
-    peer =
-        new Peer(
-
-            id,
-
-            {
-                debug:
-                    1
-            }
-
-        );
-
-
-    // --------------------------------------------------------
-    // Peer Open
-    // --------------------------------------------------------
-
-    peer.on(
-        "open",
-        () => {
-
-            setStatus(
-                "iPadカメラ準備完了\n" +
-                "Windows側を同じPINで起動してください"
-            );
-
-        }
-    );
-
-
-    // --------------------------------------------------------
-    // WindowsからDataConnection
-    // --------------------------------------------------------
-
-    peer.on(
-        "connection",
-        conn => {
-
-            console.log(
-                "Face Data Connection"
-            );
-
-
-            dataConnection =
-                conn;
-
-
-            conn.on(
-                "open",
-                () => {
-
-                    setStatus(
-                        "Windows接続完了\n" +
-                        "顔トラッキング中"
-                    );
-
-                }
-            );
-
-
-            conn.on(
-                "close",
-                () => {
-
-                    dataConnection =
-                        null;
-
-                    setStatus(
-                        "Windows切断"
-                    );
-
-                }
-            );
-
-        }
-    );
-
-
-    // --------------------------------------------------------
-    // WindowsからVideo Call
-    // --------------------------------------------------------
-
-    peer.on(
-        "call",
-        call => {
-
-            mediaCall =
-                call;
-
-
-            call.answer(
-                localStream
-            );
-
-        }
-    );
-
-
-    peer.on(
-        "error",
-        error => {
-
-            console.error(
-                error
-            );
-
-
-            setStatus(
-                "PeerJS ERROR\n" +
-                error.type
-            );
-
-        }
-    );
-
-
-    requestAnimationFrame(
-        processFace
-    );
-
-}
-
-
-// ============================================================
-// Windows
-// ============================================================
-
-async function startWindows(pin) {
-
-    document.body.classList.add(
-        "windowsMode"
-    );
-
-
-    // Windowsでは
-    // ローカルカメラは使わない
-
-    setStatus(
-        "Windows側を起動中..."
-    );
-
-
-    peer =
-        new Peer(
-
-            undefined,
-
-            {
-                debug:
-                    1
-            }
-
-        );
-
-
-    peer.on(
-        "open",
-        myId => {
-
-            console.log(
-                "Windows Peer:",
-                myId
-            );
-
-
-            const target =
-                cameraPeerId(pin);
-
-
-            // ------------------------------------------------
-            // Face Data
-            // ------------------------------------------------
-
-            dataConnection =
-                peer.connect(
-
-                    target,
-
-                    {
-
-                        reliable:
-                            false,
-
-                        serialization:
-                            "json",
-
-                        label:
-                            "face-tracking"
-
-                    }
-
-                );
-
-
-            dataConnection.on(
-                "open",
-                () => {
-
-                    setStatus(
-                        "iPadへ接続完了\n" +
-                        "顔データ待機中..."
-                    );
-
-                }
-            );
-
-
-            dataConnection.on(
-                "data",
-                data => {
-
-                    showFaceData(
-                        data
-                    );
-
-
-                    sendToPython(
-                        data
-                    );
-
-                }
-            );
-
-
-            dataConnection.on(
-                "error",
-                error => {
-
-                    console.error(
-                        error
-                    );
-
-                }
-            );
-
-
-            // ------------------------------------------------
-            // Video
-            // ------------------------------------------------
-
-            setStatus(
-                "iPadカメラへ接続中..."
-            );
-
-
-            // ダミーMediaStream
-            const emptyStream =
-                new MediaStream();
-
-
-            mediaCall =
-                peer.call(
-
-                    target,
-
-                    emptyStream
-
-                );
-
-
-            mediaCall.on(
-                "stream",
-                remoteStream => {
-
-                    console.log(
-                        "iPad camera received"
-                    );
-
-
-                    video.srcObject =
-                        remoteStream;
-
-
-                    video.play();
-
-
-                    setStatus(
-                        "接続完了\n" +
-                        "顔トラッキング中"
-                    );
-
-                }
-            );
-
-
-            mediaCall.on(
-                "error",
-                error => {
-
-                    console.error(
-                        error
-                    );
-
-                }
-            );
-
-        }
-    );
-
-
-    peer.on(
-        "error",
-        error => {
-
-            console.error(
-                error
-            );
-
-
-            setStatus(
-                "PeerJS ERROR\n" +
-                error.type
-            );
-
-        }
-    );
-
-}
-
-
-// ============================================================
-// Face表示
-// ============================================================
-
-function showFaceData(data) {
-
-    faceInfo.textContent =
-
-        "X "
-        + Number(
-            data.x
-        ).toFixed(2)
-
-        + "   Y "
-        + Number(
-            data.y
-        ).toFixed(2)
-
-        + "   Yaw "
-        + Number(
-            data.yaw
-        ).toFixed(2)
-
-        + "   Pitch "
-        + Number(
-            data.pitch
-        ).toFixed(2)
-
-        + "   Roll "
-        + Number(
-            data.roll
-        ).toFixed(2);
-
-}
-
-
-// ============================================================
-// Start
-// ============================================================
-
-startButton.addEventListener(
-
-    "click",
-
-    async () => {
-
-        const pin =
-            getPin();
-
-
-        if (!pin) {
-            return;
-        }
-
-
-        connectPython();
-
-
-        const isIOS =
-
-            /iPad|iPhone|iPod/i.test(
-                navigator.userAgent
-            )
-
-            ||
-
-            (
-                navigator.platform ===
-                "MacIntel"
-
-                &&
-
-                navigator.maxTouchPoints >
-                1
-            );
-
-
-        try {
-
-            if (isIOS) {
-
-                await startIPad(
-                    pin
-                );
-
-            }
-
-            else {
-
-                await startWindows(
-                    pin
-                );
-
-            }
-
-        }
-
-        catch (error) {
-
-            console.error(
-                error
-            );
-
-
-            setStatus(
-                "ERROR\n" +
-                error.message
-            );
-
-        }
+        await monitor.requestFullscreen();
 
     }
 
-);
+});
+
+
+/* =====================================================
+   RESET
+===================================================== */
+
+resetBtn.addEventListener("click", () => {
+
+    if (activeCall) {
+
+        try {
+            activeCall.close();
+        } catch (_) {}
+
+        activeCall = null;
+
+    }
+
+
+    if (localStream) {
+
+        localStream.getTracks().forEach(track => {
+            track.stop();
+        });
+
+        localStream = null;
+
+    }
+
+
+    if (peer) {
+
+        try {
+            peer.destroy();
+        } catch (_) {}
+
+        peer = null;
+
+    }
+
+
+    localVideo.srcObject = null;
+    remoteVideo.srcObject = null;
+
+    remoteVideo.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+    liveLabel.classList.add("hidden");
+
+    connectBtn.disabled = false;
+
+    setStatus("リセットしました。");
+
+});
+
 
 </script>
 
 </body>
-
 </html>
