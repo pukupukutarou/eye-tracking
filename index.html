@@ -1,154 +1,212 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
-<title>iPad Camera → Windows</title>
+<title>Camera Link</title>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
 <style>
 * {
-    box-sizing:border-box;
+    box-sizing: border-box;
 }
 
-html,body {
-    margin:0;
-    width:100%;
-    height:100%;
-    background:#080808;
-    color:#fff;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #080808;
+    color: white;
+    font-family: Arial, sans-serif;
 }
 
 body {
-    display:flex;
-    justify-content:center;
+    display: flex;
+    justify-content: center;
 }
 
 .app {
-    width:min(850px,100%);
-    padding:20px;
+    width: min(900px, 100%);
+    padding: 20px;
 }
 
 h1 {
-    margin:0 0 5px;
+    font-size: 24px;
+    margin: 0 0 8px;
 }
 
-.sub {
-    color:#888;
-    margin-bottom:20px;
+.subtitle {
+    color: #888;
+    margin-bottom: 20px;
 }
 
 .panel {
-    background:#151515;
-    border:1px solid #292929;
-    border-radius:16px;
-    padding:18px;
-    margin-bottom:15px;
+    background: #151515;
+    border: 1px solid #292929;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 16px;
 }
 
 label {
-    display:block;
-    color:#aaa;
-    font-size:13px;
-    margin-bottom:7px;
+    display: block;
+    font-size: 13px;
+    color: #aaa;
+    margin-bottom: 8px;
 }
 
 select,
 input,
 button {
-    width:100%;
-    padding:13px;
-    border-radius:10px;
-    border:1px solid #3a3a3a;
-    background:#0c0c0c;
-    color:#fff;
-    font-size:16px;
+    width: 100%;
+    padding: 13px;
+    border-radius: 10px;
+    border: 1px solid #3a3a3a;
+    background: #0d0d0d;
+    color: white;
+    font-size: 16px;
 }
 
-input.pin {
-    text-align:center;
-    font-size:30px;
-    letter-spacing:10px;
+.pin {
+    font-size: 28px;
+    text-align: center;
+    letter-spacing: 10px;
 }
 
 button {
-    margin-top:12px;
-    background:#287cff;
-    border:0;
-    cursor:pointer;
-    font-weight:bold;
+    margin-top: 12px;
+    border: 0;
+    background: #287cff;
+    font-weight: bold;
+    cursor: pointer;
 }
 
 button.secondary {
-    background:#292929;
+    background: #292929;
 }
 
 button.danger {
-    background:#9b2929;
+    background: #9b2929;
+}
+
+button:disabled {
+    opacity: .5;
 }
 
 .status {
-    margin-top:12px;
-    padding:12px;
-    border-radius:10px;
-    background:#0d0d0d;
-    color:#aaa;
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 10px;
+    background: #0d0d0d;
+    color: #aaa;
+    word-break: break-word;
 }
 
 .status.ok {
-    color:#70e090;
+    color: #70e090;
 }
 
 .status.error {
-    color:#ff7777;
+    color: #ff7777;
 }
 
-.video {
-    width:100%;
-    aspect-ratio:16/9;
-    background:#000;
-    border-radius:14px;
-    overflow:hidden;
+/* ライブモニター */
+
+.monitor {
+    position: relative;
+    width: 100%;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #292929;
 }
 
-video {
-    width:100%;
-    height:100%;
-    object-fit:contain;
-    background:#000;
+.liveVideo {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 80vh;
+    background: #000;
+    object-fit: contain;
+
+    /* 動画プレイヤーの操作を無効化 */
+    pointer-events: none;
+
+    /* 選択不可 */
+    user-select: none;
 }
 
-.info {
-    color:#888;
-    font-size:13px;
-    line-height:1.7;
+.liveLabel {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(0,0,0,.65);
+    color: #fff;
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.liveDot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff3030;
+    margin-right: 5px;
+}
+
+.monitorPlaceholder {
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 15px;
 }
 
 .hidden {
-    display:none;
+    display: none !important;
+}
+
+.info {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #888;
+}
+
+@media (max-width: 600px) {
+    .app {
+        padding: 12px;
+    }
+
+    .panel {
+        padding: 14px;
+    }
 }
 </style>
-
-<!-- PeerJS -->
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-
 </head>
 
 <body>
 
 <div class="app">
 
-<h1>📷 Camera Link</h1>
+<h1>📡 Camera Link</h1>
 
-<div class="sub">
-iPad → Windows
+<div class="subtitle">
+iPad → Windows / Live Monitor
 </div>
 
 
+<!-- 接続 -->
+
 <div class="panel">
 
-<label>この端末</label>
+<label>端末の役割</label>
 
 <select id="role">
 
@@ -157,7 +215,7 @@ iPad / カメラ送信
 </option>
 
 <option value="windows">
-Windows / カメラ受信
+Windows / ライブ受信
 </option>
 
 </select>
@@ -175,7 +233,7 @@ Windows / カメラ受信
     placeholder="0000"
 >
 
-<button id="connect">
+<button id="connectBtn">
 接続開始
 </button>
 
@@ -187,61 +245,74 @@ Windows / カメラ受信
 
 
 
-<!-- IPAD -->
+<!-- iPad -->
 
 <div id="ipadPanel" class="panel">
 
-<h2>📱 iPad</h2>
+<h2>📱 iPad Camera</h2>
 
-<div class="video">
+<div class="monitor">
 
 <video
     id="localVideo"
+    class="liveVideo"
     autoplay
     muted
-    playsinline>
+    playsinline
+    disablepictureinpicture
+    controlslist="nodownload noplaybackrate nofullscreen">
 </video>
+
+<div class="liveLabel">
+<span class="liveDot"></span>
+LOCAL CAMERA
+</div>
 
 </div>
 
-<button id="camera">
+<button id="cameraBtn">
 カメラ開始
 </button>
 
-<button
-    id="switchCamera"
-    class="secondary">
-
+<button id="switchCameraBtn" class="secondary">
 カメラ切替
-
 </button>
 
 </div>
 
 
 
-<!-- WINDOWS -->
+<!-- Windows -->
 
 <div id="windowsPanel" class="panel hidden">
 
-<h2>🖥 Windows</h2>
+<h2>🖥 Windows Live Monitor</h2>
 
-<div class="video">
+<div class="monitor">
+
+<div id="placeholder" class="monitorPlaceholder">
+接続待機中...
+</div>
 
 <video
     id="remoteVideo"
+    class="liveVideo hidden"
     autoplay
-    playsinline>
+    muted
+    playsinline
+    disablepictureinpicture
+    controlslist="nodownload noplaybackrate nofullscreen">
 </video>
+
+<div id="liveLabel" class="liveLabel hidden">
+<span class="liveDot"></span>
+LIVE
+</div>
 
 </div>
 
-<button
-    id="fullscreen"
-    class="secondary">
-
-全画面
-
+<button id="fullscreenBtn" class="secondary">
+全画面表示
 </button>
 
 </div>
@@ -250,50 +321,33 @@ Windows / カメラ受信
 
 <div class="panel info">
 
-<b>使い方</b>
+<b>接続方法</b>
 
 <br>
 
-① iPadでこのページを開く
+1. iPadで4桁PINを入力して接続開始
 
 <br>
 
-② 「iPad / カメラ送信」
+2. カメラを許可
 
 <br>
 
-③ 4桁PINを入力
+3. Windowsで同じPINを入力して接続開始
 
 <br>
 
-④ 「接続開始」
-
-<br>
-
-⑤ Windowsでも同じ4桁PIN
-
-<br>
-
-⑥ 「Windows / カメラ受信」
-
-<br>
-
-⑦ 「接続開始」
+4. Windowsにライブ映像が表示されます
 
 <br><br>
 
-Offer / Answerなどの操作は不要です。
+Offer / Answerの手動操作はありません。
 
 </div>
 
 
-
-<button
-    id="reset"
-    class="danger">
-
+<button id="resetBtn" class="danger">
 接続リセット
-
 </button>
 
 </div>
@@ -309,41 +363,25 @@ Offer / Answerなどの操作は不要です。
    ELEMENTS
 ===================================================== */
 
-const role =
-document.getElementById("role");
+const role = document.getElementById("role");
+const pin = document.getElementById("pin");
+const connectBtn = document.getElementById("connectBtn");
+const statusBox = document.getElementById("status");
 
-const pin =
-document.getElementById("pin");
+const ipadPanel = document.getElementById("ipadPanel");
+const windowsPanel = document.getElementById("windowsPanel");
 
-const connect =
-document.getElementById("connect");
+const localVideo = document.getElementById("localVideo");
+const remoteVideo = document.getElementById("remoteVideo");
 
-const status =
-document.getElementById("status");
+const cameraBtn = document.getElementById("cameraBtn");
+const switchCameraBtn = document.getElementById("switchCameraBtn");
 
-const ipadPanel =
-document.getElementById("ipadPanel");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const resetBtn = document.getElementById("resetBtn");
 
-const windowsPanel =
-document.getElementById("windowsPanel");
-
-const localVideo =
-document.getElementById("localVideo");
-
-const remoteVideo =
-document.getElementById("remoteVideo");
-
-const camera =
-document.getElementById("camera");
-
-const switchCamera =
-document.getElementById("switchCamera");
-
-const fullscreen =
-document.getElementById("fullscreen");
-
-const reset =
-document.getElementById("reset");
+const placeholder = document.getElementById("placeholder");
+const liveLabel = document.getElementById("liveLabel");
 
 
 /* =====================================================
@@ -351,59 +389,34 @@ document.getElementById("reset");
 ===================================================== */
 
 let peer = null;
-
 let localStream = null;
+let activeCall = null;
 
 let currentCamera = "environment";
-
-let connected = false;
 
 
 /* =====================================================
    UI
 ===================================================== */
 
-role.addEventListener(
-"change",
-updateRole
-);
-
-
 function updateRole() {
 
-    const isIPad =
-        role.value === "ipad";
+    const isIPad = role.value === "ipad";
 
-    ipadPanel.classList.toggle(
-        "hidden",
-        !isIPad
-    );
-
-    windowsPanel.classList.toggle(
-        "hidden",
-        isIPad
-    );
+    ipadPanel.classList.toggle("hidden", !isIPad);
+    windowsPanel.classList.toggle("hidden", isIPad);
 
 }
 
+role.addEventListener("change", updateRole);
 
 updateRole();
 
 
-/* =====================================================
-   STATUS
-===================================================== */
+function setStatus(message, type = "") {
 
-function setStatus(
-    message,
-    type = ""
-) {
-
-    status.textContent =
-        message;
-
-    status.className =
-        "status " + type;
+    statusBox.textContent = message;
+    statusBox.className = "status " + type;
 
 }
 
@@ -414,30 +427,13 @@ function setStatus(
 
 function validPIN() {
 
-    return /^[0-9]{4}$/.test(
-        pin.value
-    );
+    return /^[0-9]{4}$/.test(pin.value.trim());
 
 }
 
+function roomID() {
 
-/* =====================================================
-   ID
-===================================================== */
-
-/*
-    同じPINなら同じ部屋に入る。
-
-    PeerJS IDには数字だけでなく
-    prefixを付ける。
-*/
-
-function makeRoomID() {
-
-    const clean =
-        pin.value.trim();
-
-    return "camera-room-" + clean;
+    return "camera-room-" + pin.value.trim();
 
 }
 
@@ -446,28 +442,18 @@ function makeRoomID() {
    CONNECT
 ===================================================== */
 
-connect.addEventListener(
-"click",
-async () => {
+connectBtn.addEventListener("click", async () => {
 
     if (!validPIN()) {
 
-        setStatus(
-            "4桁のPINを入力してください。",
-            "error"
-        );
-
+        setStatus("4桁のPINを入力してください。", "error");
         return;
 
     }
 
+    connectBtn.disabled = true;
 
-    connect.disabled = true;
-
-
-    if (
-        role.value === "ipad"
-    ) {
+    if (role.value === "ipad") {
 
         await startIPad();
 
@@ -481,144 +467,104 @@ async () => {
 
 
 /* =====================================================
-   IPAD
+   iPAD
 ===================================================== */
 
 async function startIPad() {
 
     try {
 
-        setStatus(
-            "カメラを起動しています..."
-        );
-
+        setStatus("カメラを起動しています...");
 
         await startCamera();
 
+        if (!localStream) {
 
-        const room =
-            makeRoomID();
+            connectBtn.disabled = false;
+            return;
 
+        }
 
-        setStatus(
-            "Windowsを待っています..."
-        );
+        setStatus("接続サーバーに接続しています...");
 
-
-        peer =
-        new Peer(
-
-            room,
-
-            {
-                debug:2
-            }
-
-        );
+        peer = new Peer(roomID(), {
+            debug: 1
+        });
 
 
-        peer.on(
-            "open",
-            () => {
+        peer.on("open", () => {
 
-                setStatus(
-                    "接続待機中。Windowsで同じPINを入力してください。",
-                    "ok"
-                );
+            setStatus(
+                "待機中。Windowsで同じPINを入力してください。",
+                "ok"
+            );
 
-            }
-        );
+        });
 
 
-        peer.on(
-            "call",
-            call => {
+        /*
+            Windowsからの接続を受け取る
+        */
 
-                setStatus(
-                    "Windowsと接続しています..."
-                );
+        peer.on("connection", connection => {
 
+            setStatus("Windowsを検出。映像を送信しています...");
 
-                call.answer(
+            connection.on("open", () => {
+
+                const call = peer.call(
+                    connection.peer,
                     localStream
                 );
 
+                activeCall = call;
 
-                call.on(
-                    "stream",
-                    () => {
+                call.on("close", () => {
 
-                        connected = true;
+                    setStatus("Windowsとの接続が終了しました。");
 
-                        setStatus(
-                            "Windowsにカメラを送信中。",
-                            "ok"
-                        );
+                });
 
-                    }
-                );
+                call.on("error", error => {
 
+                    console.error(error);
 
-                call.on(
-                    "close",
-                    () => {
+                    setStatus(
+                        "映像送信エラー: " + error.message,
+                        "error"
+                    );
 
-                        connected = false;
+                });
 
-                        setStatus(
-                            "Windowsとの接続が終了しました。"
-                        );
+            });
 
-                    }
-                );
+        });
 
 
-                call.on(
-                    "error",
-                    error => {
+        peer.on("error", error => {
 
-                        console.error(error);
+            console.error(error);
 
-                        setStatus(
-                            "接続エラー: " +
-                            error.message,
-                            "error"
-                        );
+            setStatus(
+                "接続エラー: " + error.message,
+                "error"
+            );
 
-                    }
-                );
+            connectBtn.disabled = false;
 
-            }
-        );
+        });
 
 
-        peer.on(
-            "error",
-            error => {
-
-                console.error(error);
-
-                setStatus(
-                    "PeerJSエラー: " +
-                    error.message,
-                    "error"
-                );
-
-            }
-        );
-
-
-    } catch(error) {
+    } catch (error) {
 
         console.error(error);
 
         setStatus(
-            "iPad開始失敗: " +
-            error.message,
+            "iPad開始失敗: " + error.message,
             "error"
         );
 
-        connect.disabled = false;
+        connectBtn.disabled = false;
 
     }
 
@@ -633,147 +579,120 @@ async function startWindows() {
 
     try {
 
-        setStatus(
-            "Windowsを接続しています..."
-        );
+        setStatus("Windows受信を開始しています...");
+
+        peer = new Peer(undefined, {
+            debug: 1
+        });
 
 
-        peer =
-        new Peer(
+        peer.on("open", () => {
 
-            undefined,
+            const target = roomID();
 
-            {
-                debug:2
-            }
-
-        );
+            setStatus("iPadを探しています...");
 
 
-        peer.on(
-            "open",
-            () => {
+            /*
+                iPadのPeerに接続する
+            */
 
-                const room =
-                    makeRoomID();
+            const connection = peer.connect(target);
 
+            connection.on("open", () => {
+
+                setStatus("iPadを検出。映像接続中...");
+
+            });
+
+
+            /*
+                iPad側からの映像通話を待つ
+            */
+
+            peer.on("call", call => {
+
+                activeCall = call;
+
+                call.answer();
+
+                call.on("stream", stream => {
+
+                    remoteVideo.srcObject = stream;
+
+                    remoteVideo.classList.remove("hidden");
+                    placeholder.classList.add("hidden");
+                    liveLabel.classList.remove("hidden");
+
+                    remoteVideo.play().catch(() => {});
+
+                    setStatus("📡 LIVE / iPadカメラ受信中", "ok");
+
+                });
+
+                call.on("close", () => {
+
+                    remoteVideo.srcObject = null;
+
+                    remoteVideo.classList.add("hidden");
+                    placeholder.classList.remove("hidden");
+                    liveLabel.classList.add("hidden");
+
+                    setStatus("iPadとの接続が終了しました。");
+
+                });
+
+                call.on("error", error => {
+
+                    console.error(error);
+
+                    setStatus(
+                        "受信エラー: " + error.message,
+                        "error"
+                    );
+
+                });
+
+            });
+
+        });
+
+
+        peer.on("error", error => {
+
+            console.error(error);
+
+            if (error.type === "peer-unavailable") {
 
                 setStatus(
-                    "iPadを探しています..."
+                    "iPadが見つかりません。iPad側を先に接続してください。",
+                    "error"
                 );
 
+            } else {
 
-                const call =
-                    peer.call(
-                        room,
-                        new MediaStream()
-                    );
-
-
-                call.on(
-                    "stream",
-                    stream => {
-
-                        remoteVideo.srcObject =
-                            stream;
-
-
-                        remoteVideo
-                            .play()
-                            .catch(() => {});
-
-
-                        connected = true;
-
-
-                        setStatus(
-                            "📡 iPadカメラ受信中",
-                            "ok"
-                        );
-
-                    }
-                );
-
-
-                call.on(
-                    "close",
-                    () => {
-
-                        connected = false;
-
-                        setStatus(
-                            "iPadとの接続が終了しました。"
-                        );
-
-                    }
-                );
-
-
-                call.on(
-                    "error",
-                    error => {
-
-                        console.error(error);
-
-                        setStatus(
-                            "接続エラー: " +
-                            error.message,
-                            "error"
-                        );
-
-                    }
+                setStatus(
+                    "PeerJSエラー: " + error.message,
+                    "error"
                 );
 
             }
-        );
+
+            connectBtn.disabled = false;
+
+        });
 
 
-        peer.on(
-            "error",
-            error => {
-
-                console.error(error);
-
-                /*
-                    roomが存在しない場合、
-                    iPadがまだ起動していない。
-                */
-
-                if (
-                    error.type ===
-                    "peer-unavailable"
-                ) {
-
-                    setStatus(
-                        "iPadが見つかりません。iPad側を先に接続してください。",
-                        "error"
-                    );
-
-                } else {
-
-                    setStatus(
-                        "PeerJSエラー: " +
-                        error.message,
-                        "error"
-                    );
-
-                }
-
-            }
-        );
-
-
-    } catch(error) {
+    } catch (error) {
 
         console.error(error);
 
         setStatus(
-            "Windows開始失敗: " +
-            error.message,
+            "Windows開始失敗: " + error.message,
             "error"
         );
 
-        connect.disabled = false;
+        connectBtn.disabled = false;
 
     }
 
@@ -784,80 +703,71 @@ async function startWindows() {
    CAMERA
 ===================================================== */
 
-camera.addEventListener(
-"click",
-startCamera
-);
-
+cameraBtn.addEventListener("click", startCamera);
 
 async function startCamera() {
 
     try {
 
-        if (localStream) {
+        if (!navigator.mediaDevices ||
+            !navigator.mediaDevices.getUserMedia) {
 
-            localStream
-                .getTracks()
-                .forEach(
-                    track =>
-                    track.stop()
-                );
+            throw new Error(
+                "HTTPS環境でカメラを使用してください。"
+            );
 
         }
 
 
-        localStream =
-        await navigator.mediaDevices
-        .getUserMedia({
+        if (localStream) {
+
+            localStream.getTracks().forEach(track => {
+                track.stop();
+            });
+
+        }
+
+
+        localStream = await navigator.mediaDevices.getUserMedia({
 
             video: {
 
-                facingMode:
-                    currentCamera,
+                facingMode: currentCamera,
 
-                width:{
-                    ideal:1920
+                width: {
+                    ideal: 1920
                 },
 
-                height:{
-                    ideal:1080
+                height: {
+                    ideal: 1080
                 },
 
-                frameRate:{
-                    ideal:30,
-                    max:60
+                frameRate: {
+                    ideal: 30,
+                    max: 60
                 }
 
             },
 
-            audio:false
+            audio: false
 
         });
 
 
-        localVideo.srcObject =
-            localStream;
-
+        localVideo.srcObject = localStream;
 
         await localVideo.play();
 
+        cameraBtn.textContent = "カメラ再起動";
 
-        camera.textContent =
-            "カメラ再起動";
+        setStatus("カメラ起動完了。", "ok");
 
-
-        setStatus(
-            "カメラ起動完了。",
-            "ok"
-        );
-
-    } catch(error) {
+    } catch (error) {
 
         console.error(error);
 
         setStatus(
-            "カメラを起動できません: " +
-            error.message,
+            "カメラ起動失敗: " + error.message,
             "error"
         );
 
@@ -867,24 +777,17 @@ async function startCamera() {
 
 
 /* =====================================================
-   SWITCH CAMERA
+   CAMERA SWITCH
 ===================================================== */
 
-switchCamera.addEventListener(
-"click",
-async () => {
+switchCameraBtn.addEventListener("click", async () => {
 
     currentCamera =
-        currentCamera ===
-        "environment"
-
-        ? "user"
-
-        : "environment";
-
+        currentCamera === "environment"
+            ? "user"
+            : "environment";
 
     await startCamera();
-
 
 });
 
@@ -893,16 +796,13 @@ async () => {
    FULLSCREEN
 ===================================================== */
 
-fullscreen.addEventListener(
-"click",
-async () => {
+fullscreenBtn.addEventListener("click", async () => {
 
-    if (
-        remoteVideo.requestFullscreen
-    ) {
+    const monitor = remoteVideo.parentElement;
 
-        await remoteVideo
-            .requestFullscreen();
+    if (monitor.requestFullscreen) {
+
+        await monitor.requestFullscreen();
 
     }
 
@@ -913,18 +813,24 @@ async () => {
    RESET
 ===================================================== */
 
-reset.addEventListener(
-"click",
-() => {
+resetBtn.addEventListener("click", () => {
+
+    if (activeCall) {
+
+        try {
+            activeCall.close();
+        } catch (_) {}
+
+        activeCall = null;
+
+    }
+
 
     if (localStream) {
 
-        localStream
-            .getTracks()
-            .forEach(
-                track =>
-                track.stop()
-            );
+        localStream.getTracks().forEach(track => {
+            track.stop();
+        });
 
         localStream = null;
 
@@ -942,49 +848,16 @@ reset.addEventListener(
     }
 
 
-    localVideo.srcObject =
-        null;
+    localVideo.srcObject = null;
+    remoteVideo.srcObject = null;
 
-    remoteVideo.srcObject =
-        null;
+    remoteVideo.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+    liveLabel.classList.add("hidden");
 
+    connectBtn.disabled = false;
 
-    connected = false;
-
-    connect.disabled =
-        false;
-
-
-    setStatus(
-        "リセットしました。"
-    );
-
-});
-
-
-/* =====================================================
-   PAGE VISIBILITY
-===================================================== */
-
-document.addEventListener(
-"visibilitychange",
-() => {
-
-    /*
-        iOS Safariはバックグラウンドにすると
-        カメラ/WebRTCを停止する場合があります。
-    */
-
-    if (
-        document.visibilityState ===
-        "visible"
-    ) {
-
-        console.log(
-            "ページ復帰"
-        );
-
-    }
+    setStatus("リセットしました。");
 
 });
 
